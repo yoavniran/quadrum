@@ -44,4 +44,22 @@ describe("renderPieces", () => {
 		render(board, els, "8/8/8/8/8/8/4n3/8");
 		expect(board.querySelector("qd-piece.held")).not.toBeNull();
 	});
+
+	it("does not duplicate a held element on an unrelated redraw", () => {
+		const board = document.createElement("qd-board");
+		const els = new Map<Square, HTMLElement>();
+
+		render(board, els, "8/8/8/8/8/8/4P3/8");
+		const held = els.get("e2")!;
+		held.classList.add("held");
+
+		// Any redraw during a drag -- an engine tick, a hover, a mark -- used to
+		// build a second element for the held square and overwrite the map entry
+		// with it. The original then stayed in the DOM as a ghost, and the drag
+		// layer, which looks itself up through the map, never took `held` back off.
+		render(board, els, "8/8/8/8/8/8/4P3/8");
+
+		expect(board.querySelectorAll("qd-piece").length).toBe(1);
+		expect(els.get("e2")).toBe(held);
+	});
 });

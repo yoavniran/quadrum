@@ -42,6 +42,9 @@ export class Board implements MoveContext, MarkContext {
 	private _dom: BoardDom;
 	private _pieceEls: Map<Square, HTMLElement> = new Map();
 	private squareEls: Map<Square, HTMLElement> = new Map();
+	/** The square a drag is currently over. Lives outside `_state` because it
+	 *  changes on every pointermove and concerns only the square layer. */
+	private hoverSquare: Square | null = null;
 	private animator = createAnimator();
 	private gestureBinding: ReturnType<typeof bindGestures>;
 	private moveController: ReturnType<typeof createMoveController>;
@@ -121,6 +124,14 @@ export class Board implements MoveContext, MarkContext {
 
 	pieceEls(): Map<Square, HTMLElement> {
 		return this._pieceEls;
+	}
+
+	setHover(square: Square | null): void {
+		if (this.hoverSquare === square) return;
+		this.hoverSquare = square;
+		// Squares only: this fires on every pointermove, and a full render would
+		// churn the piece layer underneath the drag for nothing.
+		this.renderSquares();
 	}
 
 	setSelected(square: Square | null): void {
@@ -427,7 +438,13 @@ export class Board implements MoveContext, MarkContext {
 		renderCoords(this._dom, this._state);
 		renderPieces(this._dom.board, this._pieceEls, this._state);
 
-		// Calculate targets for squares
+		this.renderSquares();
+
+		this.renderMarks(null);
+		this.renderPromotion();
+	}
+
+	private renderSquares(): void {
 		const targets =
 			this._state.moves.showTargets && this._state.selected
 				? this._state.moves.targets.get(this._state.selected) ?? []
@@ -440,12 +457,9 @@ export class Board implements MoveContext, MarkContext {
 			{
 				targets,
 				selected: this._state.selected,
-				hover: null,
+				hover: this.hoverSquare,
 			},
 		);
-
-		this.renderMarks(null);
-		this.renderPromotion();
 	}
 
 	private renderMarks(current: Mark | null): void {

@@ -51,7 +51,7 @@ describe("options", () => {
 	it("DEFAULT_PENS have correct colors and dimensions", () => {
 		expect(DEFAULT_PENS.green.color).toBe("#15781B");
 		expect(DEFAULT_PENS.green.width).toBe(10);
-		expect(DEFAULT_PENS.green.opacity).toBe(1);
+		expect(DEFAULT_PENS.green.opacity).toBe(0.8);
 
 		expect(DEFAULT_PENS.red.color).toBe("#882020");
 		expect(DEFAULT_PENS.blue.color).toBe("#003088");
@@ -112,7 +112,7 @@ describe("options", () => {
 
 		expect(next.marks.pens.green.color).toBe("#ffffff");
 		expect(next.marks.pens.green.width).toBe(10);
-		expect(next.marks.pens.green.opacity).toBe(1);
+		expect(next.marks.pens.green.opacity).toBe(0.8);
 
 		expect(next.marks.pens.red.color).toBe("#882020");
 	});

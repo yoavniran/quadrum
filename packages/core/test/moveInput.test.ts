@@ -11,6 +11,7 @@ interface FakeContext {
 	deleted: Square[];
 	placed: Array<[Square, Piece]>;
 	setSelectedCalls: (Square | null)[];
+	hoverCalls: (Square | null)[];
 }
 
 // Read live state through ctx.state(), never a snapshot: release() reads the
@@ -23,6 +24,7 @@ function createFakeContext(options: Record<string, unknown> = {}): FakeContext {
 	const deleted: Square[] = [];
 	const placed: Array<[Square, Piece]> = [];
 	const setSelectedCalls: (Square | null)[] = [];
+	const hoverCalls: (Square | null)[] = [];
 
 	state = applyOptions(state, options);
 
@@ -30,6 +32,9 @@ function createFakeContext(options: Record<string, unknown> = {}): FakeContext {
 		state: () => state,
 		dom: () => ({ board: document.createElement("qd-board") } as unknown as BoardDom),
 		pieceEls: () => new Map(),
+		setHover: (square: Square | null) => {
+			hoverCalls.push(square);
+		},
 		setSelected: (square: Square | null) => {
 			setSelectedCalls.push(square);
 			state = applyOptions(state, { selected: square });
@@ -46,7 +51,7 @@ function createFakeContext(options: Record<string, unknown> = {}): FakeContext {
 		redraw: () => {},
 	};
 
-	return { ctx, played, deleted, placed, setSelectedCalls };
+	return { ctx, played, deleted, placed, setSelectedCalls, hoverCalls };
 }
 
 describe("moveInput", () => {
@@ -277,5 +282,28 @@ describe("moveInput", () => {
 		controller.release("e4", point);
 
 		expect(tapped).toEqual([]);
+	});
+
+	it("reports the square under a dragged piece, and drops it on release", () => {
+		const { ctx, hoverCalls } = createFakeContext({
+			moves: { targets: new Map([["e2", ["e3", "e4"]]]) },
+		});
+
+		const controller = createMoveController(ctx);
+		const point = { x: 0.5, y: 0.5 };
+
+		controller.press("e2", {} as PointerEvent, point);
+		// below the threshold: nothing is being dragged yet, so nothing hovers
+		controller.drag("e3", point, 1);
+		expect(hoverCalls).toEqual([]);
+
+		controller.drag("e3", point, 10);
+		controller.drag("e4", point, 20);
+		// back over its own square -- there is no drop to preview there
+		controller.drag("e2", point, 30);
+		expect(hoverCalls).toEqual(["e3", "e4", null]);
+
+		controller.release("e4", point);
+		expect(hoverCalls[hoverCalls.length - 1]).toBeNull();
 	});
 });

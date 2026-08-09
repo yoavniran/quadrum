@@ -8,7 +8,7 @@
 	},
 	"scripts": {
 		"dev": "vite",
-        "start": "pnpm dev",
+		"start": "pnpm dev",
 		"build": "vite build",
 		"preview": "vite preview",
 		"typecheck": "tsc -p tsconfig.json"

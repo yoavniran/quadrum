@@ -1,0 +1,181 @@
+/* 1. SIZING */
+.demo-board {
+	--qd-light-square: #f0d9b5;
+	--qd-dark-square: #b58863;
+	--qd-white-piece: #efefef;
+	--qd-black-piece: #1a1a1a;
+	--qd-white-shadow: #3a3a3a;
+	--qd-black-shadow: #e5e5e5;
+	--qd-active-wash: rgba(247, 247, 107, 0.3);
+	--qd-recent-wash: rgba(247, 247, 107, 0.1);
+	--qd-hover-outline: rgba(100, 150, 200, 0.4);
+	--qd-target-dot: rgba(20, 85, 30, 0.4);
+	--qd-capture-ring: rgba(170, 50, 30, 0.4);
+
+	width: min(90vmin, 640px);
+	aspect-ratio: 1;
+	container-type: inline-size;
+}
+
+/* 2. CHECKERBOARD */
+qd-board {
+	background-color: var(--qd-light-square);
+	/* One conic-gradient paints a whole 2x2-square tile, so a 25% tile yields
+	   12.5% squares with no offset arithmetic. The two-offset-linear-gradients
+	   recipe does NOT work here: percentage background-position resolves against
+	   (container - image), so "12.5%" is not half a tile and the board comes out
+	   as diagonal stripes. Quadrants run clockwise from 12 o'clock, which puts
+	   light at the tile's top-left -- a8 light, a1 dark. */
+	background-image: conic-gradient(
+		var(--qd-dark-square) 25%,
+		var(--qd-light-square) 0 50%,
+		var(--qd-dark-square) 0 75%,
+		var(--qd-light-square) 0
+	);
+	background-size: 25% 25%;
+	border-radius: 4px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* 3. PIECE GLYPHS */
+qd-piece {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+qd-piece::after {
+	content: var(--qd-glyph);
+	font-size: 9cqw;
+	line-height: 1;
+}
+
+qd-piece.white {
+	color: var(--qd-white-piece);
+	text-shadow:
+		1px 0 0 var(--qd-white-shadow),
+		-1px 0 0 var(--qd-white-shadow),
+		0 1px 0 var(--qd-white-shadow),
+		0 -1px 0 var(--qd-white-shadow);
+}
+
+qd-piece.white.king {
+	--qd-glyph: "\2654";
+}
+
+qd-piece.white.queen {
+	--qd-glyph: "\2655";
+}
+
+qd-piece.white.rook {
+	--qd-glyph: "\2656";
+}
+
+qd-piece.white.bishop {
+	--qd-glyph: "\2657";
+}
+
+qd-piece.white.knight {
+	--qd-glyph: "\2658";
+}
+
+qd-piece.white.pawn {
+	--qd-glyph: "\2659";
+}
+
+qd-piece.black {
+	color: var(--qd-black-piece);
+	text-shadow:
+		1px 0 0 var(--qd-black-shadow),
+		-1px 0 0 var(--qd-black-shadow),
+		0 1px 0 var(--qd-black-shadow),
+		0 -1px 0 var(--qd-black-shadow);
+}
+
+qd-piece.black.king {
+	--qd-glyph: "\265a";
+}
+
+qd-piece.black.queen {
+	--qd-glyph: "\265b";
+}
+
+qd-piece.black.rook {
+	--qd-glyph: "\265c";
+}
+
+qd-piece.black.bishop {
+	--qd-glyph: "\265d";
+}
+
+qd-piece.black.knight {
+	--qd-glyph: "\265e";
+}
+
+qd-piece.black.pawn {
+	--qd-glyph: "\265f";
+}
+
+/* 4. DECORATIONS */
+qd-square.active {
+	background-color: var(--qd-active-wash);
+}
+
+qd-square.recent {
+	background-color: var(--qd-recent-wash);
+}
+
+qd-square.hover {
+	box-shadow: inset 0 0 0 2px var(--qd-hover-outline);
+}
+
+qd-square.target {
+	background-image: radial-gradient(circle, var(--qd-target-dot) 30%, transparent 30%);
+	background-size: 100%;
+	background-position: center;
+	background-repeat: no-repeat;
+}
+
+qd-square.target.capture {
+	background-image: radial-gradient(circle, transparent 35%, var(--qd-capture-ring) 35%, var(--qd-capture-ring) 45%, transparent 45%);
+}
+
+/* .friendly and .in-check are unreachable on a free-move board with no rules, intentionally unstyled */
+
+/* 5. COORDINATES */
+qd-coords.ranks {
+	position: absolute;
+	top: 0;
+	left: 0;
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+}
+
+qd-coords.files {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	width: 100%;
+	display: flex;
+	flex-direction: row;
+}
+
+qd-coord {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 2cqw;
+	color: rgba(0, 0, 0, 0.4);
+}
+
+/* 6. CURSORS */
+/* Cursor cannot apply to qd-piece because quadrum sets pointer-events: none */
+.qd-wrap.interactive qd-board {
+	cursor: pointer;
+}
+
+.qd-wrap.interactive qd-board:active {
+	cursor: grabbing;
+}

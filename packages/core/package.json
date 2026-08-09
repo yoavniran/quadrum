@@ -1,0 +1,19 @@
+{
+  "name": "quadrum",
+  "version": "0.1.0",
+  "description": "MIT, zero-dependency chess board renderer for the web",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": ["./assets/*.css"],
+  "exports": {
+    ".": "./src/index.ts",
+    "./fen": "./src/fen.ts",
+    "./mobility": "./src/mobility.ts",
+    "./premove": "./src/premove.ts",
+    "./assets/quadrum.css": "./assets/quadrum.css"
+  },
+  "files": ["src", "assets"],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

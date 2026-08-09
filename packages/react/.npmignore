@@ -1,0 +1,149 @@
+# =============================================================================
+# quadrum-react -- publish denylist (BACKSTOP, not the primary defense)
+# =============================================================================
+#
+# READ THIS BEFORE EDITING.
+#
+# package.json's `files` array is what actually decides the tarball:
+#
+#     "files": ["dist", "src"]
+#
+# When a `files` array is present, npm DISCARDS root-level ignore files --
+# this one included. Verified against npm's packlist: a root .npmignore
+# listing `src` left all 21 src files in the tarball. Only an ignore file
+# INSIDE an included directory (e.g. src/.npmignore) still prunes.
+#
+# So while `files` stands, nothing below has any effect. It exists for two
+# real cases:
+#
+#   1. `files` is ever removed or emptied -- this file becomes the entire
+#      defense, and an allowlist-shaped mistake stops being a leak.
+#   2. A broad entry is ever added to `files` (a bare "." or a new directory
+#      that carries its own cruft) -- copy the relevant block into a
+#      subdirectory .npmignore, where it does take effect.
+#
+# Keep `files` as the primary mechanism. An allowlist fails closed; a
+# denylist fails open, and a leaked key or an internal note is not the kind
+# of mistake you want a published, immutable version to make for you.
+#
+# What SHOULD ship, for reference:
+#   dist/               built ESM + .d.ts + sourcemaps
+#   src/                TypeScript source -- deliberate: the exports map has
+#                       a "source" condition, and dist sourcemaps point here
+#                       (quadrum-react ships no assets of its own)
+#   README / LICENSE / package.json   (npm always includes these)
+# =============================================================================
+
+
+# --- Tests and fixtures ------------------------------------------------------
+# Never shipped. The suite lives in test/ at the package root, but these
+# patterns also catch a spec that lands inside src/ later.
+test/
+tests/
+__tests__/
+__mocks__/
+__fixtures__/
+__snapshots__/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+*.test.js
+*.spec.js
+vitest.config.*
+vitest.setup.*
+vitest.workspace.*
+coverage/
+.nyc_output/
+
+
+# --- Build and type-check configuration --------------------------------------
+# Consumers compile against dist/ and the shipped .d.ts files; none of the
+# build wiring is useful to them, and tsconfig.json in a published package
+# actively confuses editors that walk up looking for one.
+tsconfig.json
+tsconfig.*.json
+tsup.config.*
+rollup.config.*
+vite.config.*
+webpack.config.*
+.swcrc
+.babelrc
+babel.config.*
+
+
+# --- Source control, CI, tooling ---------------------------------------------
+.git/
+.gitignore
+.gitattributes
+.github/
+.gitlab-ci.yml
+.changeset/
+.husky/
+.editorconfig
+.eslintrc*
+eslint.config.*
+.eslintignore
+.prettierrc*
+prettier.config.*
+.prettierignore
+biome.json
+.npmrc
+.nvmrc
+.tool-versions
+
+
+# --- Editor and OS cruft -----------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# --- Secrets and local-only files --------------------------------------------
+# A published version is immutable and cannot be truly unpublished after 72h,
+# so treat these as unrecoverable if they escape.
+.env
+.env.*
+*.local
+*.pem
+*.key
+*.p12
+*.keystore
+secrets.json
+.claude/
+CLEANROOM.md
+
+
+# --- Build byproducts and logs -----------------------------------------------
+*.tgz
+*.tsbuildinfo
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+node_modules/
+.cache/
+.turbo/
+.rollup.cache/
+
+
+# --- Repo-level material that is not part of the package ---------------------
+# The published README is the package's own. Everything else -- plans,
+# architecture notes, the demo, e2e -- belongs to the repo, not the tarball.
+docs/
+examples/
+e2e/
+playwright.config.*
+playwright-report/
+test-results/
+architecture.md
+CONTRIBUTING.md
+
+# Note: CHANGELOG.md is deliberately NOT ignored. changesets writes one per
+# package, and shipping it is conventional -- but it only reaches the tarball
+# if `files` gains a "CHANGELOG.md" entry, since `files` governs today.

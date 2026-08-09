@@ -27,7 +27,16 @@ qd-square {
 	height: 12.5%;
 }
 
+/* Square highlights are a backdrop, pieces sit on it. Both layers are appended
+   lazily, so without an explicit order a square created after its piece (a
+   selection, a check, a move highlight) paints over the glyph and washes it in
+   the highlight colour. */
+qd-square {
+	z-index: 1;
+}
+
 qd-piece {
+	z-index: 2;
 	pointer-events: none;
 	background-size: contain;
 	background-repeat: no-repeat;
@@ -65,6 +74,13 @@ qd-piece.appearing {
 	width: 100%;
 	height: 100%;
 	pointer-events: none;
+}
+
+/* Above the pieces: qd-board creates no stacking context, so the piece layer's
+   z-index competes with these siblings directly and would otherwise cover the
+   arrows. */
+.qd-marks {
+	z-index: 3;
 }
 
 .qd-badges {

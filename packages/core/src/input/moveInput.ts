@@ -9,6 +9,9 @@ export interface MoveContext {
 	dom(): BoardDom;
 	pieceEls(): Map<Square, HTMLElement>;
 	setSelected(square: Square | null): void;
+	/** The square the pointer is currently over mid-drag, for the drop
+	 *  highlight -- null whenever nothing is being dragged. */
+	setHover(square: Square | null): void;
 	play(from: Square, to: Square): void;
 	deletePiece(square: Square): void;
 	placePiece(square: Square, piece: Piece): void;
@@ -89,6 +92,7 @@ export function createMoveController(ctx: MoveContext): MoveController {
 		isDragging = false;
 		draggedSquare = null;
 		dragThresholdPassed = false;
+		ctx.setHover(null);
 	};
 
 	return {
@@ -120,7 +124,7 @@ export function createMoveController(ctx: MoveContext): MoveController {
 			}
 		},
 
-		drag(_square: Square | null, point: Point, distance: number) {
+		drag(square: Square | null, point: Point, distance: number) {
 			if (ctx.state().locked) return;
 
 			if (!isDragging) return;
@@ -153,6 +157,12 @@ export function createMoveController(ctx: MoveContext): MoveController {
 
 			// If we've passed the threshold, update the position
 			if (dragThresholdPassed) {
+				// Tell the view which square the piece would land on. It is set
+				// unconditionally and the *view* decides how to draw it, so a
+				// consumer can style hovering an illegal square differently from
+				// hovering a legal one.
+				ctx.setHover(square === draggedSquare ? null : square);
+
 				if (draggedSquare !== null && ctx.pieceEls().has(draggedSquare)) {
 					const el = ctx.pieceEls().get(draggedSquare);
 					if (el) {

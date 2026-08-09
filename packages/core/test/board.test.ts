@@ -226,6 +226,72 @@ describe("board", () => {
 		expect(container.querySelectorAll(".in-check")).toHaveLength(0);
 	});
 
+	it("a move press wipes the user's marks, and clearOnPress opts out", () => {
+		const board = createBoard(container, {
+			animate: { enabled: false },
+			position: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR",
+		});
+		board.setUserMarks([{ from: "e2", to: "e4" }]);
+
+		const press = () =>
+			container
+				.querySelector("qd-board")!
+				.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+
+		press();
+		expect(board.state().marks.user).toHaveLength(0);
+
+		// Auto marks are the app's, not the user's scratch work -- a press must
+		// leave engine arrows and the like alone.
+		board.setUserMarks([{ from: "e2", to: "e4" }]);
+		board.setAutoMarks([{ from: "d2", to: "d4" }]);
+		board.update({ marks: { clearOnPress: false } });
+		press();
+		expect(board.state().marks.user).toHaveLength(1);
+		expect(board.state().marks.auto).toHaveLength(1);
+	});
+
+	it("paints the hovered square, which the render used to hardcode away", () => {
+		const board = createBoard(container, {
+			animate: { enabled: false },
+			position: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR",
+		});
+
+		board.setHover("e4");
+		expect(container.querySelector('[data-square="e4"].hover')).not.toBeNull();
+
+		board.setHover(null);
+		expect(container.querySelectorAll(".hover")).toHaveLength(0);
+	});
+
+	it("draws an arrow as one polygon that starts clear of its origin square", () => {
+		const board = createBoard(container, {
+			animate: { enabled: false },
+			marks: { user: [{ from: "a1", to: "a8" }] },
+		});
+
+		const arrows = container.querySelectorAll('.qd-marks [data-mark="arrow"]');
+		expect(arrows).toHaveLength(1);
+
+		// A shaft and a head drawn as separate elements only meet if their
+		// lengths agree; as one polygon they cannot come apart.
+		const arrow = arrows[0] as SVGPolygonElement;
+		expect(arrow.tagName).toBe("polygon");
+		expect(Number(arrow.getAttribute("opacity"))).toBeLessThan(1);
+
+		// a1 is the bottom-left square, so the arrow runs up the x=50 column from
+		// y=750 to y=50. Every tail vertex must sit well above the origin centre
+		// (smaller y) so the piece on a1 stays visible.
+		const ys = arrow
+			.getAttribute("points")!
+			.split(" ")
+			.map((p) => Number(p.split(",")[1]));
+		expect(Math.max(...ys)).toBeLessThan(750 - 30);
+		expect(Math.min(...ys)).toBeCloseTo(50, 5);
+
+		board.unmount();
+	});
+
 	it("playing from an emptied square drops the stale selection", () => {
 		const board = createBoard(container, {
 			animate: { enabled: false },

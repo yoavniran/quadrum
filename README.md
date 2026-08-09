@@ -185,6 +185,14 @@ behaviour-preserving refactor legitimately has nothing to announce. On merge to 
 `.github/workflows/release.yml` opens a "Version Packages" PR; merging *that* publishes to
 npm via trusted publishing (OIDC — no token) and tags a GitHub release.
 
+That PR is titled `chore: version packages 0.2.0` — it names the version it would release,
+so the queued release is legible from the PR list without opening anything. The version has
+to be computed *before* `changeset version` runs, because the changesets action takes the
+title as a static input; `.github/scripts/release-report.mjs` derives it from
+`changeset status`, which builds the same release plan and only reports it. The same script
+writes the run summary: a table of every package's old → new version on a version-PR run,
+and of what actually reached npm on a publish run.
+
 Two settings exist purely to keep 0.x releases from over-bumping, and are worth
 understanding before changing either. `quadrum-react` peer-depends on `quadrum` as
 `>=0.1.0 <1`, not `^0.1.0`, because a caret on a 0.x version only admits 0.1.x — so a

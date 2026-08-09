@@ -164,6 +164,16 @@ export class BoardPage {
 		return this.page.locator("qd-square.target");
 	}
 
+	/**
+	 * The target decoration on one named square. quadrum only creates a
+	 * `qd-square` for a square that carries a decoration, so an undecorated
+	 * square has no element at all — assert its absence with `toHaveCount(0)`
+	 * rather than `not.toHaveClass`, which needs an element to inspect.
+	 */
+	targetOn(square: Square): Locator {
+		return this.page.locator(`qd-square[data-square="${square}"].target`);
+	}
+
 	arrow(from: Square, to: Square): Locator {
 		return this.page.locator(`[data-mark="arrow"][data-from="${from}"][data-to="${to}"]`);
 	}

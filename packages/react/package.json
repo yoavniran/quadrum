@@ -1,0 +1,21 @@
+{
+  "name": "quadrum-react",
+  "version": "0.1.0",
+  "description": "React bindings for the quadrum chess board renderer",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": ["src"],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "quadrum": "workspace:*",
+    "react": ">=18"
+  },
+  "dependencies": {
+    "quadrum": "workspace:*"
+  }
+}

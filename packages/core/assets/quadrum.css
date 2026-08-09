@@ -1,0 +1,105 @@
+/* Structural CSS for quadrum board renderer */
+
+/* Container */
+.qd-wrap {
+	position: relative;
+	user-select: none;
+	display: block;
+}
+
+/* Board */
+qd-board {
+	display: block;
+	position: relative;
+	width: 100%;
+	height: 100%;
+	touch-action: none;
+	overflow: hidden;
+}
+
+/* Pieces and squares */
+qd-piece,
+qd-square {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 12.5%;
+	height: 12.5%;
+}
+
+qd-piece {
+	pointer-events: none;
+	background-size: contain;
+	background-repeat: no-repeat;
+}
+
+/* Drag and animation states */
+qd-piece.held,
+qd-piece.gliding {
+	will-change: transform;
+	z-index: 10;
+}
+
+qd-piece.trace {
+	opacity: 0.3;
+}
+
+qd-piece.vanishing,
+qd-piece.appearing {
+	transition: opacity 200ms ease-out;
+}
+
+qd-piece.vanishing {
+	opacity: 0;
+}
+
+qd-piece.appearing {
+	opacity: 1;
+}
+
+/* Mark layers */
+.qd-marks,
+.qd-badges {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+}
+
+.qd-badges {
+	z-index: 5;
+}
+
+/* Coordinate labels */
+qd-coords {
+	position: absolute;
+	pointer-events: none;
+}
+
+qd-coords.hidden {
+	display: none;
+}
+
+qd-coord {
+	display: inline-block;
+}
+
+/* Promotion picker */
+qd-promotion {
+	position: absolute;
+	z-index: 20;
+	width: 100%;
+	height: 100%;
+	top: 0;
+	left: 0;
+}
+
+qd-promotion > [data-backdrop] {
+	position: absolute;
+	inset: 0;
+}
+
+qd-promotion qd-piece {
+	pointer-events: auto;
+}

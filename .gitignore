@@ -1,0 +1,13 @@
+CLEANROOM.md
+.idea
+node_modules
+dist
+*.local
+.DS_Store
+.claude/worktrees
+playwright-report/
+test-results/
+dist-e2e/
+reports/
+
+docs/thrifty/

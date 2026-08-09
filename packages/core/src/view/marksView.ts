@@ -3,10 +3,6 @@ import type { BoardState } from "../options";
 import type { BoardDom } from "./layout";
 import { squareToPoint } from "../model/squares";
 
-/** How far an arrow's tail sits from its origin square's centre, in board units
- *  (100 per square) -- enough to clear the piece it starts from. */
-const ARROW_TAIL = 42;
-
 /** SVG coordinates carry no meaning past a fraction of a unit; trimming them
  *  keeps the emitted markup readable and diffable. */
 function round(n: number): number {
@@ -118,13 +114,13 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 			const width = mark.width ?? pen.width;
 			const headWidth = width * 2.6;
 			const headLength = headWidth * 0.9;
-			// Start clear of the origin square's piece instead of on top of it:
-			// a square is 100 units, so ~42 leaves the glyph visible. Short
-			// arrows give the tail back rather than swallow the head.
-			const tail = Math.min(ARROW_TAIL, Math.max(0, dist - headLength - width));
-
-			const baseX = fromCenter.x + ux * tail;
-			const baseY = fromCenter.y + uy * tail;
+			// The tail sits on the origin square's centre, not short of it: the
+			// piece is what should hide it, and it does, because the marks layer
+			// paints under the pieces (see quadrum.css). Backing the geometry off
+			// instead leaves a gap on an empty origin square and still shows a
+			// stub next to a narrow piece.
+			const baseX = fromCenter.x;
+			const baseY = fromCenter.y;
 			const neckX = toCenter.x - ux * headLength;
 			const neckY = toCenter.y - uy * headLength;
 			const half = width / 2;

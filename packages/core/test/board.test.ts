@@ -264,7 +264,7 @@ describe("board", () => {
 		expect(container.querySelectorAll(".hover")).toHaveLength(0);
 	});
 
-	it("draws an arrow as one polygon that starts clear of its origin square", () => {
+	it("draws an arrow as one polygon rooted at its origin square's centre", () => {
 		const board = createBoard(container, {
 			animate: { enabled: false },
 			marks: { user: [{ from: "a1", to: "a8" }] },
@@ -280,13 +280,14 @@ describe("board", () => {
 		expect(Number(arrow.getAttribute("opacity"))).toBeLessThan(1);
 
 		// a1 is the bottom-left square, so the arrow runs up the x=50 column from
-		// y=750 to y=50. Every tail vertex must sit well above the origin centre
-		// (smaller y) so the piece on a1 stays visible.
+		// y=750 to y=50. It is rooted at the origin centre rather than backed off
+		// it -- the piece hides the tail, because the marks layer paints under the
+		// pieces -- so the tail vertices sit exactly on y=750.
 		const ys = arrow
 			.getAttribute("points")!
 			.split(" ")
 			.map((p) => Number(p.split(",")[1]));
-		expect(Math.max(...ys)).toBeLessThan(750 - 30);
+		expect(Math.max(...ys)).toBeCloseTo(750, 5);
 		expect(Math.min(...ys)).toBeCloseTo(50, 5);
 
 		board.unmount();

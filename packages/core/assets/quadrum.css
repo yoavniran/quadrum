@@ -36,7 +36,7 @@ qd-square {
 }
 
 qd-piece {
-	z-index: 2;
+	z-index: 3;
 	pointer-events: none;
 	background-size: contain;
 	background-repeat: no-repeat;
@@ -76,11 +76,14 @@ qd-piece.appearing {
 	pointer-events: none;
 }
 
-/* Above the pieces: qd-board creates no stacking context, so the piece layer's
-   z-index competes with these siblings directly and would otherwise cover the
-   arrows. */
+/* qd-board creates no stacking context, so the piece layer's z-index competes
+   with these siblings directly and the order here is the whole paint order.
+   Marks go BELOW the pieces: an arrow is drawn from the centre of its origin
+   square and the piece standing there is what hides the tail, so the arrow
+   reads as emerging from behind the piece. Badges (move-quality glyphs and the
+   like) annotate the pieces, so they stay on top. */
 .qd-marks {
-	z-index: 3;
+	z-index: 2;
 }
 
 .qd-badges {

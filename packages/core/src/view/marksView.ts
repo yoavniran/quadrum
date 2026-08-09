@@ -3,6 +3,16 @@ import type { BoardState } from "../options";
 import type { BoardDom } from "./layout";
 import { squareToPoint } from "../model/squares";
 
+/** How far an arrow's tail sits from its origin square's centre, in board units
+ *  (100 per square) -- enough to clear the piece it starts from. */
+const ARROW_TAIL = 42;
+
+/** SVG coordinates carry no meaning past a fraction of a unit; trimming them
+ *  keeps the emitted markup readable and diffable. */
+function round(n: number): number {
+	return Math.round(n * 100) / 100;
+}
+
 export function markKey(mark: Mark): string {
 	return mark.to ? `${mark.from}${mark.to}` : mark.from;
 }
@@ -91,41 +101,55 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 			const toPoint = squareToPoint(mark.to, state.orientation);
 			const toCenter = { x: toPoint.x * 100 + 50, y: toPoint.y * 100 + 50 };
 
-			const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-			g.setAttribute("opacity", String(pen.opacity));
-
-			// Shorten the line by ~20 units from the origin and stop before the arrowhead
+			// One continuous polygon -- shaft and head share the same outline --
+			// rather than a <line> plus a detached <polygon>. Drawn separately the
+			// two only meet if their lengths agree exactly, and any disagreement
+			// shows as a gap or an overshoot at the neck; as one path they cannot
+			// come apart, and the fill needs no opaque stroke to hide the seam.
 			const dx = toCenter.x - fromCenter.x;
 			const dy = toCenter.y - fromCenter.y;
-			const dist = Math.sqrt(dx * dx + dy * dy);
-			const headLength = 30;
-			const lineStart = { x: fromCenter.x + (dx / dist) * 20, y: fromCenter.y + (dy / dist) * 20 };
-			const lineEnd = { x: toCenter.x - (dx / dist) * headLength, y: toCenter.y - (dy / dist) * headLength };
+			const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+			const ux = dx / dist;
+			const uy = dy / dist;
+			// perpendicular
+			const nx = -uy;
+			const ny = ux;
 
-			const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-			line.setAttribute("x1", String(lineStart.x));
-			line.setAttribute("y1", String(lineStart.y));
-			line.setAttribute("x2", String(lineEnd.x));
-			line.setAttribute("y2", String(lineEnd.y));
-			line.setAttribute("stroke", pen.color);
-			line.setAttribute("stroke-width", String(mark.width ?? pen.width));
-			line.setAttribute("stroke-linecap", "round");
+			const width = mark.width ?? pen.width;
+			const headWidth = width * 2.6;
+			const headLength = headWidth * 0.9;
+			// Start clear of the origin square's piece instead of on top of it:
+			// a square is 100 units, so ~42 leaves the glyph visible. Short
+			// arrows give the tail back rather than swallow the head.
+			const tail = Math.min(ARROW_TAIL, Math.max(0, dist - headLength - width));
 
-			// Arrowhead
-			const angle = Math.atan2(dy, dx);
-			const arrowSize = 20;
-			const p1 = { x: toCenter.x, y: toCenter.y };
-			const p2 = { x: toCenter.x - arrowSize * Math.cos(angle - Math.PI / 6), y: toCenter.y - arrowSize * Math.sin(angle - Math.PI / 6) };
-			const p3 = { x: toCenter.x - arrowSize * Math.cos(angle + Math.PI / 6), y: toCenter.y - arrowSize * Math.sin(angle + Math.PI / 6) };
+			const baseX = fromCenter.x + ux * tail;
+			const baseY = fromCenter.y + uy * tail;
+			const neckX = toCenter.x - ux * headLength;
+			const neckY = toCenter.y - uy * headLength;
+			const half = width / 2;
+			const headHalf = headWidth / 2;
+
+			const points = [
+				[baseX + nx * half, baseY + ny * half],
+				[neckX + nx * half, neckY + ny * half],
+				[neckX + nx * headHalf, neckY + ny * headHalf],
+				[toCenter.x, toCenter.y],
+				[neckX - nx * headHalf, neckY - ny * headHalf],
+				[neckX - nx * half, neckY - ny * half],
+				[baseX - nx * half, baseY - ny * half],
+			];
 
 			const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-			polygon.setAttribute("points", `${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y}`);
+			polygon.setAttribute(
+				"points",
+				points.map(([x, y]) => `${round(x!)},${round(y!)}`).join(" "),
+			);
 			polygon.setAttribute("fill", pen.color);
-
-			g.appendChild(line);
-			g.appendChild(polygon);
-			describeMark(g, "arrow", mark, penKey);
-			dom.marks.appendChild(g);
+			polygon.setAttribute("opacity", String(pen.opacity));
+			polygon.setAttribute("stroke-linejoin", "round");
+			describeMark(polygon, "arrow", mark, penKey);
+			dom.marks.appendChild(polygon);
 		} else {
 			// Circle
 			const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");

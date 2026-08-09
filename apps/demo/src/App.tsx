@@ -9,6 +9,9 @@ export function App() {
 	return (
 		<div className="app-container">
 			<header>
+				{/* Decorative: the <h1> right below already says "quadrum", so an
+				    alt here would just make a screen reader announce it twice. */}
+				<img className="app-logo" src="/logo.png" alt="" width={72} height={67} />
 				<h1>quadrum</h1>
 				<p>A rules-agnostic chess board renderer</p>
 			</header>

@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.png">
+    <img src="docs/assets/logo-light.png" alt="quadrum" width="160">
+  </picture>
+</p>
+
 # quadrum
 
 A small, MIT-licensed, **zero-dependency** chess **board renderer** for the web, with

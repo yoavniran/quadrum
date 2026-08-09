@@ -17,6 +17,8 @@ export function App() {
 			</header>
 
 			<main>
+				{/* Two separate triggers wipe marks, and the press fires first — so
+				    "keep my marks" has to turn off both or the toggle does nothing. */}
 				<Board
 					className="demo-board"
 					position={board.displayPlacement}
@@ -33,6 +35,7 @@ export function App() {
 					autoMarks={board.autoMarks}
 					onMarksChange={board.setUserMarks}
 					clearMarksOnPositionChange={!board.keepMarksOnMove}
+					clearMarksOnPress={!board.keepMarksOnMove}
 					coordinates
 					animationDuration={120}
 					promotionEnabled={board.promotionEnabled}

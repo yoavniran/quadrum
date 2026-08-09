@@ -47,6 +47,14 @@ export interface BoardProps {
 	onMarksChange?: MarksChangedHandler | null;
 	onPromote?: PromoteHandler | null;
 	clearMarksOnPositionChange?: boolean;
+	/**
+	 * Whether reaching for a piece wipes the user's marks. Defaults to `true` in
+	 * core, which is the usual chess-UI behaviour — drawings belong to the position
+	 * you drew them on. An annotation tool that wants them to survive a move has to
+	 * turn this off *and* `clearMarksOnPositionChange`: they are two separate
+	 * triggers, and the press fires first.
+	 */
+	clearMarksOnPress?: boolean;
 	apiRef?: React.RefObject<BoardApi | null>;
 	className?: string;
 }
@@ -81,6 +89,7 @@ export function Board({
 	onMarksChange,
 	onPromote,
 	clearMarksOnPositionChange = true,
+	clearMarksOnPress,
 	apiRef,
 	className,
 }: BoardProps) {
@@ -114,6 +123,7 @@ export function Board({
 			user: userMarks,
 			auto: autoMarks,
 			pens,
+			clearOnPress: clearMarksOnPress,
 			onChange: onMarksChange,
 		},
 		animate: {
@@ -137,12 +147,23 @@ export function Board({
 		prevPositionRef.current = position;
 	}, [position, clearMarksOnPositionChange, api]);
 
-	// Sync apiRef
+	// Sync apiRef. Deliberately no dependency array: `api` is a ref, so its
+	// identity never changes, and a `[api, apiRef]` effect therefore runs exactly
+	// once -- after the first commit, when the board does not exist yet. The board
+	// is created on the second commit (the element reaches useBoard through a
+	// state setter), so the run that mattered never happened and `apiRef.current`
+	// stayed null for the life of the component. Assigning on every commit costs
+	// one property write.
 	useEffect(() => {
-		if (apiRef) {
-			apiRef.current = api.current;
-		}
-	}, [api, apiRef]);
+		if (!apiRef) return;
+
+		apiRef.current = api.current;
+
+		return () => {
+			// So an unmounted board is not left reachable through the consumer's ref.
+			apiRef.current = null;
+		};
+	});
 
 	return <div className={className} ref={ref} />;
 }

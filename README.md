@@ -185,6 +185,18 @@ behaviour-preserving refactor legitimately has nothing to announce. On merge to 
 `.github/workflows/release.yml` opens a "Version Packages" PR; merging *that* publishes to
 npm via trusted publishing (OIDC — no token) and tags a GitHub release.
 
+Two settings exist purely to keep 0.x releases from over-bumping, and are worth
+understanding before changing either. `quadrum-react` peer-depends on `quadrum` as
+`>=0.1.0 <1`, not `^0.1.0`, because a caret on a 0.x version only admits 0.1.x — so a
+routine `0.1.0 → 0.2.0` minor on core would fall *out* of the binding's declared range.
+Changesets reads that as a breaking change to `quadrum-react` and bumps it **major**; the
+`linked` pair then drags core up with it, and a pile of minor and patch changesets
+silently versions both packages **1.0.0**. The widened range keeps every 0.x minor in
+range, and `onlyUpdatePeerDependentsWhenOutOfRange` stops changesets bumping the binding
+for a peer change that is not actually breaking. The `<1` bound is deliberate: the real
+1.0.0 *does* fall out of range, so that one transition still bumps both to 1.0.0, which is
+correct. After 1.0.0 the whole problem disappears, since `^1.x` admits every 1.x minor.
+
 ### Publishing setup
 
 Everything below is **account and repository configuration** — none of it lives in the

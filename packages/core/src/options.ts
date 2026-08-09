@@ -4,6 +4,7 @@ import type { Pieces, Targets } from "./types";
 import type {
 	MovePlayedHandler,
 	SelectHandler,
+	SquareTapHandler,
 	PositionChangedHandler,
 	MarksChangedHandler,
 	PromoteHandler,
@@ -20,6 +21,8 @@ export interface MoveOptions {
 export interface SelectOptions {
 	enabled?: boolean;
 	onSelect?: SelectHandler | null;
+	/** Every completed click/tap, empty squares included. See SquareTapHandler. */
+	onTap?: SquareTapHandler | null;
 }
 
 export interface DragOptions {
@@ -74,7 +77,11 @@ export interface BoardState {
 	coordinates: boolean;
 	locked: boolean;
 	moves: Required<Omit<MoveOptions, "onPlayed">> & { onPlayed: MovePlayedHandler | null };
-	select: { enabled: boolean; onSelect: SelectHandler | null };
+	select: {
+		enabled: boolean;
+		onSelect: SelectHandler | null;
+		onTap: SquareTapHandler | null;
+	};
 	drag: Required<DragOptions>;
 	marks: {
 		enabled: boolean;
@@ -115,6 +122,7 @@ export function defaultState(): BoardState {
 		select: {
 			enabled: true,
 			onSelect: null,
+			onTap: null,
 		},
 		drag: {
 			enabled: true,
@@ -210,6 +218,9 @@ export function applyOptions(state: BoardState, options: BoardOptions): BoardSta
 		}
 		if (select.onSelect !== undefined) {
 			next.select.onSelect = select.onSelect;
+		}
+		if (select.onTap !== undefined) {
+			next.select.onTap = select.onTap;
 		}
 	}
 

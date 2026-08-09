@@ -11,6 +11,7 @@ import type {
 	PositionChangedHandler,
 	PromoteHandler,
 	SelectHandler,
+	SquareTapHandler,
 	Square,
 	Targets,
 } from "quadrum";
@@ -40,6 +41,8 @@ export interface BoardProps {
 	promotionEnabled?: boolean;
 	onMove?: MovePlayedHandler | null;
 	onSelect?: SelectHandler | null;
+	/** Every completed click/tap, empty squares included. See SquareTapHandler. */
+	onSquareTap?: SquareTapHandler | null;
 	onPositionChanged?: PositionChangedHandler | null;
 	onMarksChange?: MarksChangedHandler | null;
 	onPromote?: PromoteHandler | null;
@@ -73,6 +76,7 @@ export function Board({
 	promotionEnabled,
 	onMove,
 	onSelect,
+	onSquareTap,
 	onPositionChanged,
 	onMarksChange,
 	onPromote,
@@ -99,6 +103,7 @@ export function Board({
 		select: {
 			enabled: selectable,
 			onSelect,
+			onTap: onSquareTap,
 		},
 		drag: {
 			enabled: dragEnabled,

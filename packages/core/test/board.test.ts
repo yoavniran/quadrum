@@ -205,4 +205,41 @@ describe("board", () => {
 		expect(state.marks.user).toHaveLength(1);
 		expect(state.marks.auto).toHaveLength(1);
 	});
+
+	it("marks the checked king from a colour and from a square alike", () => {
+		// Both forms of checkSide are strings, so the colour case can only be
+		// recognised by elimination. Getting that wrong drops the highlight.
+		const board = createBoard(container, {
+			animate: { enabled: false },
+			position: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR",
+			checkSide: "white",
+		});
+
+		expect(container.querySelector('[data-square="e1"].in-check')).not.toBeNull();
+		expect(container.querySelectorAll(".in-check")).toHaveLength(1);
+
+		board.update({ checkSide: "e8" });
+		expect(container.querySelector('[data-square="e8"].in-check')).not.toBeNull();
+		expect(container.querySelectorAll(".in-check")).toHaveLength(1);
+
+		board.update({ checkSide: null });
+		expect(container.querySelectorAll(".in-check")).toHaveLength(0);
+	});
+
+	it("playing from an emptied square drops the stale selection", () => {
+		const board = createBoard(container, {
+			animate: { enabled: false },
+			selected: "e2",
+		});
+		expect(board.state().selected).toBe("e2");
+
+		// The consumer erases the piece the selection points at — a board
+		// editor does exactly this. Without the drop, the selection outlives
+		// its piece and every later press reads as "play from e2", which
+		// no-ops for want of a piece and wedges the board.
+		board.update({ position: "8/8/8/8/8/8/8/8", animate: { enabled: false } });
+		board.play("e2", "e4");
+
+		expect(board.state().selected).toBeNull();
+	});
 });

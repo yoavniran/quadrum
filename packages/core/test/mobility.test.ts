@@ -8,10 +8,12 @@ describe("mobility", () => {
 		expect(targets).toEqual([]);
 	});
 
-	it("knight on b1 from initial position returns a3 and c3", () => {
+	it("knight on b1 from initial position returns a3, c3 and the friendly d2", () => {
 		const pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
 		const targets = premoveTargets(pieces, "b1");
-		expect(targets.sort()).toEqual(["a3", "c3"]);
+		// d2 holds White's own pawn, and is offered anyway — Nb1-d2 is a normal
+		// premove betting that pawn is gone by the time the reply lands.
+		expect(targets.sort()).toEqual(["a3", "c3", "d2"]);
 	});
 
 	it("white pawn on e2 initial returns e3, e4, d3, f3", () => {
@@ -35,13 +37,23 @@ describe("mobility", () => {
 		].sort());
 	});
 
-	it("rook ray meets friendly piece and stops before it", () => {
-		// uppercase P — a white pawn, friendly to the white rook on d4
+	it("rook ray offers the friendly-occupied square, then stops on it", () => {
+		// uppercase P — a white pawn, friendly to the white rook on d4.
+		// A premove onto your own piece is legal: you are betting the opponent
+		// captures that pawn before the premove runs. What occupancy decides is
+		// only that the ray cannot continue past d2.
 		const pieces = fenToPieces("8/8/8/8/3R4/8/3P4/8");
 		const targets = premoveTargets(pieces, "d4");
-		// Should not include d2 (friendly pawn)
-		expect(targets).not.toContain("d2");
 		expect(targets).toContain("d3");
+		expect(targets).toContain("d2");
+		expect(targets).not.toContain("d1");
+	});
+
+	it("knight may premove onto a friendly-occupied square", () => {
+		// white knight d4, white pawn e6 — one knight-move away
+		const pieces = fenToPieces("8/8/4P3/8/3N4/8/8/8");
+		const targets = premoveTargets(pieces, "d4");
+		expect(targets).toContain("e6");
 	});
 
 	it("rook ray meets enemy piece and includes it", () => {
@@ -83,15 +95,19 @@ describe("mobility", () => {
 		expect(targets).not.toContain("e2");
 	});
 
-	it("chess960 king on b1 with rook on a1 includes a1", () => {
-		const pieces = fenToPieces("8/8/8/8/8/8/8/RK6");
-		const targets = premoveTargets(pieces, "b1", { chess960: true });
+	// The king sits on d1, three files from the rook on a1, deliberately: with the
+	// king on b1 the rook square is also an ordinary adjacent step, so a1 would be
+	// offered either way and the test could not tell king-takes-rook apart from a
+	// one-square king move onto a friendly piece.
+	it("chess960 king-takes-rook offers the distant own rook's square", () => {
+		const pieces = fenToPieces("8/8/8/8/8/8/8/R2K4");
+		const targets = premoveTargets(pieces, "d1", { chess960: true });
 		expect(targets).toContain("a1");
 	});
 
-	it("chess960 king on b1 without chess960 flag does not include a1", () => {
-		const pieces = fenToPieces("8/8/8/8/8/8/8/RK6");
-		const targets = premoveTargets(pieces, "b1");
+	it("without the chess960 flag the distant own rook's square is not offered", () => {
+		const pieces = fenToPieces("8/8/8/8/8/8/8/R2K4");
+		const targets = premoveTargets(pieces, "d1");
 		expect(targets).not.toContain("a1");
 	});
 

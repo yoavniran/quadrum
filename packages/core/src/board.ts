@@ -129,7 +129,20 @@ export class Board implements MoveContext, MarkContext {
 
 		// No piece to move. Without this, the `fromPiece!` below writes
 		// `undefined` into the pieces map and the next render throws.
-		if (!fromPiece) return;
+		//
+		// Drop the selection on the way out: the only way to reach here is a
+		// selection pointing at a square whose piece has since gone — the
+		// consumer erased it, or swapped the position under us. Leaving it
+		// standing wedges the board, because every later press reads as "play
+		// from the selected square", lands here, and returns without ever
+		// arming a drag or picking a new selection.
+		if (!fromPiece) {
+			if (this._state.selected !== null) {
+				this._state = applyOptions(this._state, { selected: null });
+				this.render();
+			}
+			return;
+		}
 
 		// Check for chess960 king-takes-rook
 		if (

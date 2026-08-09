@@ -7,11 +7,13 @@ import type {
 	PositionChangedHandler,
 	PromoteHandler,
 	SelectHandler,
+	SquareTapHandler,
 } from "quadrum";
 
 interface Handlers {
 	onPlayed?: MovePlayedHandler | null;
 	onSelect?: SelectHandler | null;
+	onTap?: SquareTapHandler | null;
 	onPositionChanged?: PositionChangedHandler | null;
 	onMarksChange?: MarksChangedHandler | null;
 	onPromote?: PromoteHandler | null;
@@ -39,6 +41,7 @@ export function useBoard(options: BoardOptions): {
 	handlersRef.current = {
 		onPlayed: options.moves?.onPlayed,
 		onSelect: options.select?.onSelect,
+		onTap: options.select?.onTap,
 		onPositionChanged: options.onPositionChanged,
 		onMarksChange: options.marks?.onChange,
 		onPromote: options.promotion?.onPromote,
@@ -59,6 +62,7 @@ export function useBoard(options: BoardOptions): {
 			select: {
 				...initial.select,
 				onSelect: (square) => handlersRef.current.onSelect?.(square),
+				onTap: (square) => handlersRef.current.onTap?.(square),
 			},
 			marks: {
 				...initial.marks,

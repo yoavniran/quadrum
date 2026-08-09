@@ -54,6 +54,17 @@ export interface MoveMeta {
 
 export type MovePlayedHandler = (from: Square, to: Square, meta: MoveMeta) => void;
 export type SelectHandler = (square: Square | null) => void;
+/**
+ * A completed click/tap that never became a drag, reported with the square under
+ * the pointer (null when the release landed off the board).
+ *
+ * Distinct from SelectHandler: selection is the board's own state, and it only
+ * moves to squares a piece can move *from* — so pressing an empty square reports
+ * `null` there. A consumer that edits the position instead of playing it (stamping
+ * a piece down, erasing a square) needs the square that was actually pressed,
+ * whatever is or is not standing on it.
+ */
+export type SquareTapHandler = (square: Square | null) => void;
 export type PositionChangedHandler = (placement: string) => void;
 export type MarksChangedHandler = (marks: Mark[]) => void;
 export type PromoteHandler = (from: Square, to: Square, role: Role) => void;

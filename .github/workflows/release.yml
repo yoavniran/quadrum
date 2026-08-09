@@ -16,13 +16,28 @@ name: Release
 # Authentication is npm **trusted publishing** (OIDC): there is no NPM_TOKEN.
 # npm verifies this workflow's identity directly and attaches provenance.
 #
-# ONE-TIME SETUP, required before the first automated publish:
-#   - Both packages must already exist on npm. Trusted publishing is configured
-#     per existing package, so publish 0.1.0 by hand once:
-#       pnpm build && cd packages/core && npm publish && cd ../react && npm publish
-#   - Then on npmjs.com, for each of `quadrum` and `quadrum-react`:
-#     Settings -> Trusted publishers -> GitHub Actions, with
-#     repository `yoavniran/quadrum` and workflow `release.yml`.
+# ONE-TIME SETUP, required before the first automated publish. None of this is in
+# the repo -- it is all account and repository configuration. See the "Publishing
+# setup" section of readme.md for the full walkthrough.
+#
+#   1. GitHub -> repo Settings -> Actions -> General -> Workflow permissions:
+#      tick "Allow GitHub Actions to create and approve pull requests".
+#      WITHOUT THIS, step 2 above fails. The action pushes changeset-release/main
+#      successfully and then dies on:
+#        "GitHub Actions is not permitted to create or approve pull requests."
+#      The `pull-requests: write` permission below is necessary but NOT sufficient
+#      -- this org/repo toggle overrides it, and defaults to off.
+#   2. Both packages must already exist on npm. Trusted publishing is configured
+#      per existing package, and a package that has never been published has no
+#      settings page to configure -- so the first publish must be manual:
+#        pnpm build
+#        cd packages/core && npm publish          # core first: react peer-depends on it
+#        cd ../react && npm publish
+#   3. Then on npmjs.com, for each of `quadrum` and `quadrum-react`:
+#      Settings -> Trusted publishers -> GitHub Actions, with
+#      repository `yoavniran/quadrum` and workflow `release.yml`.
+#
+# There is deliberately no NPM_TOKEN secret. Do not add one -- OIDC replaces it.
 on:
   push:
     branches:

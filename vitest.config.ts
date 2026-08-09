@@ -15,7 +15,9 @@ export default defineConfig({
 	test: {
 		globals: true,
 		environment: "jsdom",
-		include: ["packages/*/test/**/*.test.{ts,tsx}"],
+		// The second entry covers release.yml's helper scripts, which live next to
+		// the workflow that uses them rather than inside a package.
+		include: ["packages/*/test/**/*.test.{ts,tsx}", ".github/scripts/*.test.mjs"],
 		setupFiles: [r("./test/setup.ts")],
 		// The default worker-thread pool hangs indefinitely with jsdom on this
 		// setup; forks are marginally slower to start and reliably terminate.

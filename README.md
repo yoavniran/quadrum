@@ -122,9 +122,22 @@ piece glyphs (Unicode, no image assets), square decorations, coordinates, cursor
 because quadrum's own CSS is structural only. Copy that file as the starting point for a
 new consumer.
 
-The packages currently expose TypeScript source directly through their `exports` map, so
-a bundler (Vite, Next, Rollup) consumes them with no build step. A published build will
-be added before release.
+## Building and releasing
+
+`pnpm build` bundles both packages with tsup (ESM only) and emits declarations with
+`tsc --emitDeclarationOnly`; the output lands in each package's `dist/`. That is what npm
+consumers get.
+
+In-repo, nothing depends on `dist/` being fresh: each package's `exports` map carries a
+`"source"` condition pointing at `src/`, and both `tsconfig.base.json`
+(`customConditions`) and the demo's Vite config resolve it. So `pnpm typecheck`,
+`pnpm test` and `pnpm dev` all work against TypeScript source with no `dist/` present,
+and can never read a stale build.
+
+Releases are driven by [changesets](https://github.com/changesets/changesets): add one
+with `pnpm changeset` in any PR that changes published code. On merge to `main`,
+`.github/workflows/release.yml` opens a "Version Packages" PR; merging *that* publishes to
+npm via trusted publishing (OIDC — no token) and tags a GitHub release.
 
 ## License
 

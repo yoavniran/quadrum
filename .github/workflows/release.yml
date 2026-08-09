@@ -1,0 +1,87 @@
+name: Release
+
+# Changesets-driven release for `quadrum` and `quadrum-react`.
+#
+# How it works:
+#   1. Every PR that changes published code should add a changeset
+#      (`pnpm changeset`) describing the bump. This is not enforced -- ci.yml's
+#      "changeset" job only warns, since docs/CI-only PRs legitimately have none.
+#   2. On push to main, this workflow opens/updates a "Version Packages" PR that
+#      applies the pending changesets: bumps versions, rewrites CHANGELOG.md,
+#      deletes the consumed changeset files.
+#   3. Merging that PR runs this workflow again; now there are no pending
+#      changesets, so the action publishes the packages to npm instead and tags
+#      the release on GitHub.
+#
+# Authentication is npm **trusted publishing** (OIDC): there is no NPM_TOKEN.
+# npm verifies this workflow's identity directly and attaches provenance.
+#
+# ONE-TIME SETUP, required before the first automated publish:
+#   - Both packages must already exist on npm. Trusted publishing is configured
+#     per existing package, so publish 0.1.0 by hand once:
+#       pnpm build && cd packages/core && npm publish && cd ../react && npm publish
+#   - Then on npmjs.com, for each of `quadrum` and `quadrum-react`:
+#     Settings -> Trusted publishers -> GitHub Actions, with
+#     repository `yoavniran/quadrum` and workflow `release.yml`.
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      # Push the version branch and create GitHub releases.
+      contents: write
+      # Open the "Version Packages" PR.
+      pull-requests: write
+      # Mint the OIDC token npm trades for publish rights. Without this,
+      # trusted publishing fails with an authentication error.
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Changesets reads history to work out what changed since the last tag.
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1; don't rely on whatever npm the
+      # Node image happens to bundle.
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The release must not be able to ship something that doesn't compile.
+      - name: Verify
+        run: |
+          pnpm typecheck
+          pnpm test
+
+      - name: Version PR or publish
+        uses: changesets/action@v1
+        with:
+          version: pnpm changeset version
+          publish: pnpm release
+          title: "chore: version packages"
+          commit: "chore: version packages"
+          createGithubReleases: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"

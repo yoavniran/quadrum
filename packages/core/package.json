@@ -3,17 +3,66 @@
   "version": "0.1.0",
   "description": "MIT, zero-dependency chess board renderer for the web",
   "license": "MIT",
-  "type": "module",
-  "sideEffects": ["./assets/*.css"],
-  "exports": {
-    ".": "./src/index.ts",
-    "./fen": "./src/fen.ts",
-    "./mobility": "./src/mobility.ts",
-    "./premove": "./src/premove.ts",
-    "./assets/quadrum.css": "./assets/quadrum.css"
+  "author": "Yoav Niran",
+  "homepage": "https://github.com/yoavniran/quadrum#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yoavniran/quadrum.git",
+    "directory": "packages/core"
   },
-  "files": ["src", "assets"],
+  "bugs": {
+    "url": "https://github.com/yoavniran/quadrum/issues"
+  },
+  "keywords": [
+    "chess",
+    "chessboard",
+    "board",
+    "renderer",
+    "fen",
+    "typescript"
+  ],
+  "type": "module",
+  "sideEffects": [
+    "./assets/*.css"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./fen": {
+      "source": "./src/fen.ts",
+      "types": "./dist/fen.d.ts",
+      "default": "./dist/fen.js"
+    },
+    "./mobility": {
+      "source": "./src/mobility.ts",
+      "types": "./dist/mobility.d.ts",
+      "default": "./dist/mobility.js"
+    },
+    "./premove": {
+      "source": "./src/premove.ts",
+      "types": "./dist/premove.d.ts",
+      "default": "./dist/premove.js"
+    },
+    "./assets/quadrum.css": "./assets/quadrum.css",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "assets"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

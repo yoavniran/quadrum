@@ -3,19 +3,53 @@
   "version": "0.1.0",
   "description": "React bindings for the quadrum chess board renderer",
   "license": "MIT",
-  "type": "module",
-  "exports": {
-    ".": "./src/index.ts"
+  "author": "Yoav Niran",
+  "homepage": "https://github.com/yoavniran/quadrum#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yoavniran/quadrum.git",
+    "directory": "packages/react"
   },
-  "files": ["src"],
+  "bugs": {
+    "url": "https://github.com/yoavniran/quadrum/issues"
+  },
+  "keywords": [
+    "chess",
+    "chessboard",
+    "react",
+    "quadrum",
+    "typescript"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json"
   },
   "peerDependencies": {
-    "quadrum": "workspace:*",
+    "quadrum": "^0.1.0",
     "react": ">=18"
   },
-  "dependencies": {
+  "devDependencies": {
     "quadrum": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

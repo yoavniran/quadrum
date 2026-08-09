@@ -19,8 +19,10 @@ to ship — see "No theme" below — so every consumer authors an equivalent, an
 the worked example. Its pieces are Unicode glyphs on `qd-piece::after`, so the repo carries
 no binary art and no font licence.
 
-Both packages expose TypeScript source directly through their `exports` map, so a
-bundler consumes them with no build step. There is no bundler config yet by design.
+Both packages publish a real build (`dist/`, ESM + declarations) but resolve to `src/`
+inside the repo, via a `"source"` export condition that `tsconfig.base.json` and the
+demo's Vite config opt into. Consumers get compiled JS; the repo never reads a stale
+`dist/`.
 
 ## The core package
 
@@ -123,6 +125,7 @@ user marks; a consumer that wants lichess-style clearing opts in with
 ## Running it
 
 See the Development section of [`README.md`](./README.md) — `pnpm install`, `pnpm test`,
-`pnpm typecheck`. The packages have no build step; `pnpm dev` serves `apps/demo` through
-Vite, which compiles their TypeScript source directly and is the standing proof that the
-source-only `exports` maps work in a real bundler.
+`pnpm typecheck`, `pnpm build`. `pnpm dev` serves `apps/demo` through Vite, which compiles
+the packages' TypeScript source directly (via the `source` condition) and is the standing
+proof that a real bundler can consume them. CI runs typecheck, tests, `pnpm build` and a
+demo build on every PR; see the Building and releasing section of the README.

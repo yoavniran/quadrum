@@ -1,0 +1,79 @@
+name: CI
+
+# Quality gate for every change headed to main: type-check, unit tests, and a real
+# bundler build of the demo app. Make this a *required* status check in the repo's
+# branch-protection rules so PRs can't merge until it's green.
+#
+# The demo build is not busywork: the packages ship TypeScript source through their
+# `exports` maps with no build step, so `apps/demo` building under Vite is the only
+# proof that a real bundler can consume them.
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # pnpm before node, so setup-node's pnpm cache has a package manager to query.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Root script uses --no-bail, so a failure in core still reports react and demo.
+      - name: Type-check (core, react, demo)
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build the publishable packages
+        run: pnpm build
+
+      - name: Build the demo app
+        run: pnpm --filter quadrum-demo build
+
+  # Advisory only: a PR touching published source usually wants a changeset, but
+  # docs-, test- and CI-only PRs legitimately have none, so this never fails the
+  # build. It just puts a notice on the PR.
+  changeset:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Warn when published packages changed with no changeset
+        run: |
+          base="origin/${{ github.base_ref }}"
+          changed=$(git diff --name-only "$base"...HEAD -- packages/core/src packages/react/src)
+          added=$(git diff --name-only "$base"...HEAD -- .changeset | grep -E '\.changeset/.+\.md$' || true)
+          if [ -n "$changed" ] && [ -z "$added" ]; then
+            echo "::warning::Package source changed but no changeset was added. Run 'pnpm changeset' if this should ship a new version."
+          else
+            echo "Changeset check OK."
+          fi

@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { Board } from "../src/Board";
-import type { MovePlayedHandler } from "quadrum";
+import type { Board as BoardApi, MovePlayedHandler } from "quadrum";
 
 describe("Board", () => {
 	let container: HTMLDivElement;
@@ -160,6 +160,49 @@ describe("Board", () => {
 
 		const marksAfterSecond = container.querySelectorAll(".qd-marks > *").length;
 		expect(marksAfterSecond).toBe(marksAfterFirst);
+	});
+
+	it("apiRef is populated once the board exists, and released on unmount", async () => {
+		// Regression: the sync effect had a static dependency array, so it ran only
+		// after the first commit -- before the element (and therefore the board)
+		// existed -- and never again. The documented imperative handle was null for
+		// the whole life of every board.
+		const root = createRoot(container);
+		const apiRef: React.RefObject<BoardApi | null> = { current: null };
+
+		await act(async () => {
+			root.render(<Board apiRef={apiRef} animationDuration={0} />);
+		});
+
+		expect(apiRef.current).not.toBeNull();
+		expect(typeof apiRef.current?.state).toBe("function");
+
+		await act(async () => {
+			root.unmount();
+		});
+
+		expect(apiRef.current).toBeNull();
+	});
+
+	it("clearMarksOnPress reaches core, on mount and on a later update", async () => {
+		// Regression: the prop existed nowhere in the React layer, so a consumer
+		// could not stop a press from wiping their marks. Both halves are pinned
+		// because only the update path was missing -- a mount-only test passed
+		// while the toggle stayed dead for the whole life of the component.
+		const root = createRoot(container);
+		const apiRef: React.RefObject<BoardApi | null> = { current: null };
+
+		await act(async () => {
+			root.render(<Board apiRef={apiRef} clearMarksOnPress={false} animationDuration={0} />);
+		});
+
+		expect(apiRef.current?.state().marks.clearOnPress).toBe(false);
+
+		await act(async () => {
+			root.render(<Board apiRef={apiRef} clearMarksOnPress={true} animationDuration={0} />);
+		});
+
+		expect(apiRef.current?.state().marks.clearOnPress).toBe(true);
 	});
 
 	it("marksEnabled prop is accepted and passed through", async () => {

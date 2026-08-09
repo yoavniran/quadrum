@@ -93,6 +93,48 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
+  # Conventional Commits, enforced. The local .husky/commit-msg hook catches these
+  # at commit time, but a hook is opt-in -- it only exists for someone who ran
+  # `pnpm install`, and `--no-verify` skips it -- so this is the check that actually
+  # holds. Rules live in commitlint.config.js, shared by both.
+  #
+  # Both halves matter because they cover different merge strategies: the commit
+  # range is what lands on a merge commit or a rebase, and the PR title is what
+  # lands as the subject of a squash merge.
+  commits:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        # Full history: commitlint walks the range base..HEAD, which a shallow
+        # clone cannot resolve.
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint the PR's commit messages
+        run: pnpm exec commitlint --from "origin/${{ github.base_ref }}" --to HEAD --verbose
+
+      - name: Lint the PR title
+        # The title is attacker-controlled text from a fork, so it goes through the
+        # environment rather than being interpolated into the script, where a
+        # backtick or $(...) would execute as part of this step.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | pnpm exec commitlint --verbose
+
   # Advisory only: a PR touching published source usually wants a changeset, but
   # docs-, test- and CI-only PRs legitimately have none, so this never fails the
   # build. It just puts a notice on the PR.

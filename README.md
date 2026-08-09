@@ -185,6 +185,46 @@ behaviour-preserving refactor legitimately has nothing to announce. On merge to 
 `.github/workflows/release.yml` opens a "Version Packages" PR; merging *that* publishes to
 npm via trusted publishing (OIDC — no token) and tags a GitHub release.
 
+### Publishing setup
+
+Everything below is **account and repository configuration** — none of it lives in the
+repo, and the release workflow cannot succeed until it is done. It is a one-time list.
+
+**1. Let Actions open pull requests.** Repo Settings → Actions → General → Workflow
+permissions → tick *"Allow GitHub Actions to create and approve pull requests"*.
+
+This defaults to **off**, and it is the first thing that breaks. `release.yml` already
+requests `pull-requests: write`, but that permission is not sufficient — the repo toggle
+overrides it. Without it the workflow pushes `changeset-release/main` and then fails with
+`GitHub Actions is not permitted to create or approve pull requests`.
+
+**2. Claim the names on npm.** An npm account with 2FA enabled, and the names `quadrum`
+and `quadrum-react` unregistered.
+
+**3. Publish 0.1.0 by hand, once.** Trusted publishing is configured on a package's
+settings page, and a package that has never been published has no settings page — so the
+first release cannot be automated. Core goes first, since `quadrum-react` peer-depends on
+it:
+
+```bash
+npm login
+pnpm build
+cd packages/core && npm publish
+cd ../react && npm publish
+```
+
+**4. Point each package at this workflow.** On npmjs.com, for each of `quadrum` and
+`quadrum-react`: Settings → Trusted publishers → GitHub Actions, with repository
+`yoavniran/quadrum` and workflow `release.yml`.
+
+After this every later release is automatic, and **no `NPM_TOKEN` secret is needed** —
+OIDC replaces it. Do not add one. Optionally then set the packages to *"Require
+two-factor authentication and disallow tokens"*: trusted publishing keeps working,
+because it does not authenticate with a token.
+
+Trusted publishing needs npm ≥ 11.5.1 and Node ≥ 22.14 — `release.yml` installs
+`npm@latest` rather than trusting whatever the runner image ships.
+
 ## License
 
 MIT — see [`LICENSE`](./LICENSE).

@@ -8,14 +8,29 @@ export const PROMOTION_ROLES: readonly Role[] = ["queen", "rook", "bishop", "kni
 
 const listenerMap = new WeakMap<HTMLElement, EventListener>();
 
+/** What a rendered picker is showing, so an unchanged one can be left alone. */
+function requestKey(req: PromotionRequest, orientation: Color): string {
+	return `${req.from}${req.to}${req.color}${orientation}`;
+}
+
 export function renderPromotion(
 	dom: BoardDom,
 	req: PromotionRequest | null,
 	orientation: Color,
 	onPick: (role: Role | null) => void,
 ): void {
-	// Clear existing promotion picker and listeners
 	const existing = dom.overlay.querySelector("qd-promotion") as HTMLElement | null;
+
+	// Every board render calls through here, and a pointer moving across the
+	// board renders (hover decorations). Rebuilding an unchanged picker each
+	// time swaps the cell out from under the pointer between mousedown and
+	// mouseup, so the click event never fires and the picker cannot be used.
+	// An identical request is therefore a no-op.
+	if (existing && req && existing.dataset.request === requestKey(req, orientation)) {
+		return;
+	}
+
+	// Clear existing promotion picker and listeners
 	if (existing) {
 		const backdrop = existing.querySelector("[data-backdrop]") as HTMLElement | null;
 		if (backdrop) {
@@ -39,8 +54,36 @@ export function renderPromotion(
 	}
 
 	const picker = document.createElement("qd-promotion");
+	picker.dataset.request = requestKey(req, orientation);
+
+	// The picker lives inside the wrap, and the move layer binds its pointer
+	// handlers there. Without swallowing the raw pointer events, a press on a
+	// promotion cell ALSO reaches the board and plays a move to whichever square
+	// the cell happens to sit over -- so by the time the cell's own click fires,
+	// the pawn being promoted has already left its square. `click` is far too
+	// late to stop that: the damage is done on pointerdown/pointerup.
+	for (const type of ["pointerdown", "pointerup", "pointermove", "mousedown", "mouseup"]) {
+		picker.addEventListener(type, (e) => e.stopPropagation());
+	}
+	// Right-clicking the picker would otherwise draw a mark on the square behind
+	// it; the wrap's own contextmenu suppression no longer sees the event.
+	picker.addEventListener("contextmenu", (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+	});
+
 	const backdrop = document.createElement("div");
 	backdrop.dataset.backdrop = "";
+
+	// The backdrop goes in FIRST. It is a full-bleed absolutely-positioned
+	// sibling of the cells, so appending it last would paint it over them at
+	// equal z-index and every click on a piece would cancel instead of promote.
+	const backdropHandler = () => {
+		onPick(null);
+	};
+	listenerMap.set(backdrop, backdropHandler);
+	backdrop.addEventListener("click", backdropHandler);
+	picker.appendChild(backdrop);
 
 	const point = squareToPoint(req.to, orientation);
 
@@ -73,13 +116,6 @@ export function renderPromotion(
 
 		picker.appendChild(cell);
 	}
-
-	const backdropHandler = () => {
-		onPick(null);
-	};
-	listenerMap.set(backdrop, backdropHandler);
-	backdrop.addEventListener("click", backdropHandler);
-	picker.appendChild(backdrop);
 
 	dom.overlay.appendChild(picker);
 }

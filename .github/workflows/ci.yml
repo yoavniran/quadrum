@@ -55,6 +55,44 @@ jobs:
       - name: Build the demo app
         run: pnpm --filter quadrum-demo build
 
+  # The only job that exercises quadrum in a real browser. Everything else runs in
+  # jsdom, which has no layout and no pointer events -- so percentage positioning,
+  # the drag threshold and the mark pens are unobserved until this runs. Its own
+  # job rather than a step in `verify`: it needs a browser download, it is the
+  # slowest thing here, and its failures should read as browser failures.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Playwright's webServer starts the demo on 5273 and tears it down after.
+      - name: End-to-end tests
+        run: pnpm test:e2e
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
   # Advisory only: a PR touching published source usually wants a changeset, but
   # docs-, test- and CI-only PRs legitimately have none, so this never fails the
   # build. It just puts a notice on the PR.

@@ -451,8 +451,15 @@ export class Board implements MoveContext, MarkContext {
 				const { from, to } = request;
 				this.promotionRequest = null;
 
-				// Apply the move
-				const piece = this._state.pieces.get(from)!;
+				// Apply the move. The origin can legitimately be empty by now --
+				// anything that mutated the position while the picker was open
+				// leaves nothing to promote -- so drop the request rather than
+				// throwing on an absent piece.
+				const piece = this._state.pieces.get(from);
+				if (!piece) {
+					this.renderPromotion();
+					return;
+				}
 				const captured = this._state.pieces.get(to) || null;
 
 				this._state.pieces.delete(from);

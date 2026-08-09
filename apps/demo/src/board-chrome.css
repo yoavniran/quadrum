@@ -179,3 +179,15 @@ qd-coord {
 .qd-wrap.interactive qd-board:active {
 	cursor: grabbing;
 }
+
+/* 7. PROMOTION PICKER */
+/* quadrum positions the four cells and the backdrop but paints neither. */
+qd-promotion > [data-backdrop] {
+	background: rgba(0, 0, 0, 0.5);
+}
+
+qd-promotion qd-piece {
+	background-color: #f0f0f0;
+	border: 1px solid rgba(0, 0, 0, 0.3);
+	border-radius: 4px;
+}

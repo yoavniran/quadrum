@@ -29,6 +29,26 @@ function clearLayers(dom: BoardDom): void {
 	}
 }
 
+/**
+ * Stamp a rendered mark with what it represents. The SVG is otherwise anonymous
+ * -- a bare <line>/<circle> among others -- which leaves application CSS and
+ * tests with nothing to select on. `data-mark` is the shape, `data-from`/`data-to`
+ * the squares, `data-pen` the pen key.
+ */
+function describeMark(
+	el: SVGElement,
+	kind: "arrow" | "circle" | "badge",
+	mark: Mark,
+	penKey: string,
+): void {
+	el.setAttribute("data-mark", kind);
+	el.setAttribute("data-from", mark.from);
+	if (mark.to) {
+		el.setAttribute("data-to", mark.to);
+	}
+	el.setAttribute("data-pen", penKey);
+}
+
 export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | null): void {
 	if (!state.marks.enabled) {
 		clearLayers(dom);
@@ -55,6 +75,7 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 	// Render all marks
 	for (const mark of keyToMark.values()) {
 		const pen = resolvePen(state, mark);
+		const penKey = mark.pen ?? "green";
 		const fromPoint = squareToPoint(mark.from, state.orientation);
 		const fromCenter = { x: fromPoint.x * 100 + 50, y: fromPoint.y * 100 + 50 };
 
@@ -63,6 +84,7 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 			const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
 			g.setAttribute("transform", `translate(${fromPoint.x * 100}, ${fromPoint.y * 100})`);
 			g.innerHTML = mark.svg;
+			describeMark(g, "badge", mark, penKey);
 			dom.badges.appendChild(g);
 		} else if (mark.to) {
 			// Arrow
@@ -102,6 +124,7 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 
 			g.appendChild(line);
 			g.appendChild(polygon);
+			describeMark(g, "arrow", mark, penKey);
 			dom.marks.appendChild(g);
 		} else {
 			// Circle
@@ -113,6 +136,7 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 			circle.setAttribute("stroke", pen.color);
 			circle.setAttribute("stroke-width", String(mark.width ?? pen.width));
 			circle.setAttribute("opacity", String(pen.opacity));
+			describeMark(circle, "circle", mark, penKey);
 			dom.marks.appendChild(circle);
 		}
 	}

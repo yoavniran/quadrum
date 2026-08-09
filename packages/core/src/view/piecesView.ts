@@ -36,6 +36,16 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 			}
 		}
 
+		// The square kept its identity in the map but changed occupant -- a
+		// capture, a promotion, or a wholly new position. Retire the old element
+		// as well as replacing the map entry: overwriting the entry alone orphans
+		// it in the DOM forever, so the square ends up with two pieces on it and
+		// the stale one never leaves. A held element is the drag layer's to own,
+		// so leave it be, exactly as the removal pass below does.
+		if (existing && !existing.classList.contains("held") && existing.parentNode === board) {
+			board.removeChild(existing);
+		}
+
 		const newEl = createPieceEl(piece);
 		placePieceEl(newEl, square, state.orientation);
 		board.appendChild(newEl);

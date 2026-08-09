@@ -9,9 +9,16 @@ small and usable with any engine (chess.js, a server, a variant).
 ```
 packages/core     quadrum         — the renderer, zero dependencies
 packages/react    quadrum-react   — <Board> + useBoard
-apps/demo         quadrum-demo    — tier-1 demo: a free-move 2D board
+apps/demo         quadrum-demo    — the demo app, and the e2e suite's fixture
+e2e/              Playwright specs driving apps/demo in a real browser
 test/setup.ts     jsdom shims shared by both packages' suites
 ```
+
+The unit suites run in jsdom, which has no layout and no pointer events, so percentage
+positioning, the drag threshold and the mark pens are unobservable there. `e2e/` covers
+exactly that gap — shallow and wide, one or two tests per feature, driven only by real
+mouse and keyboard events. It is why the demo exposes a control and a readout for every
+option rather than staying minimal.
 
 `apps/demo` supplies its own board chrome (`src/board-chrome.css`): checkerboard, piece
 glyphs, square decorations, coordinate placement, cursors. None of that is the library's

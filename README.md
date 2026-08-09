@@ -101,15 +101,39 @@ State classes: `qd-square` carries `target` (`+capture` / `+friendly`), `recent`
 pnpm install
 pnpm test        # vitest, jsdom
 pnpm typecheck   # tsc across both packages
+pnpm test:e2e    # playwright, real browser (see below)
 pnpm dev         # serve apps/demo at http://localhost:5173
 ```
 
+### End-to-end tests
+
+`e2e/` drives the demo app in Chromium with Playwright. It is shallow and wide: one or
+two tests per feature across movement, orientation, targets, marks (arrows, circles,
+pens), premoves, chess960 castling and the promotion picker.
+
+Every gesture is a **real** one — `page.mouse` presses, moves and releases at real pixel
+coordinates, and clicks on the demo's own controls. Nothing in the suite calls quadrum's
+API or pokes React state, because the layer being tested *is* pointer handling and
+percentage layout, and jsdom can observe neither.
+
+```bash
+pnpm test:e2e      # headless; starts the demo on :5273 itself
+pnpm test:e2e:ui   # Playwright's UI mode, for writing or debugging a spec
+```
+
+Requires the browser once: `pnpm exec playwright install chromium`. The suite also runs
+as its own CI job on every PR.
+
 ### The demo app
 
-`apps/demo` is the tier-1 demo: a free-move 2D board where any piece can be dragged or
-clicked to any square, plus Flip / Reset / Clear and a live placement readout. It is the
-only place quadrum runs in a real browser, so run it whenever you change rendering,
-layout or input.
+`apps/demo` is the demo and the e2e fixture: a board with free / targeted / premove
+modes, chess960 castling, a promotion picker, arrows and circles, and toggles for lock,
+drag, off-board removal and mark behaviour, plus readouts for placement, last move, move
+count, marks and the premove queue. It is the only place quadrum runs in a real browser,
+so run it whenever you change rendering, layout or input.
+
+Every control carries an accessible name, and the demo's readouts are `data-testid`
+nodes — both exist so the e2e suite can drive and read the app the way a person would.
 
 ```bash
 pnpm dev                             # dev server with HMR

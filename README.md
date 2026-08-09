@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-# quadrum
+# Quadrum
 
 A small, MIT-licensed, **zero-dependency** chess **board renderer** for the web, with
 first-party React bindings.

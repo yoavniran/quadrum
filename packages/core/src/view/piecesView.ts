@@ -27,7 +27,17 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 		seen.add(square);
 		const existing = els.get(square);
 
-		if (existing && !existing.classList.contains("held")) {
+		// A held element belongs to the drag layer: it is positioned against the
+		// pointer and handed back on release. Building a replacement for it here
+		// strands the original in the DOM -- the ghost that trails a drag -- and
+		// overwrites the map entry the drag layer looks itself up by, so `held`
+		// never comes off and the stray never leaves. Skip it outright, exactly
+		// as the removal pass below does.
+		if (existing?.classList.contains("held")) {
+			continue;
+		}
+
+		if (existing) {
 			const color = existing.classList.contains("white") ? "white" : "black";
 			const role = Array.from(existing.classList).find(c => !["white", "black"].includes(c)) as string | undefined;
 			if (color === piece.color && role === piece.role) {
@@ -40,9 +50,8 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 		// capture, a promotion, or a wholly new position. Retire the old element
 		// as well as replacing the map entry: overwriting the entry alone orphans
 		// it in the DOM forever, so the square ends up with two pieces on it and
-		// the stale one never leaves. A held element is the drag layer's to own,
-		// so leave it be, exactly as the removal pass below does.
-		if (existing && !existing.classList.contains("held") && existing.parentNode === board) {
+		// the stale one never leaves.
+		if (existing && existing.parentNode === board) {
 			board.removeChild(existing);
 		}
 

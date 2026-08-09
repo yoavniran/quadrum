@@ -70,6 +70,16 @@ export class Board implements MoveContext, MarkContext {
 					if (info.kind === "mark") {
 						this.markController.press(info.square, info.event);
 					} else {
+						// Reaching for a piece ends whatever the drawings were
+						// working through, so the board doesn't accumulate arrows
+						// from three positions ago.
+						if (
+							this._state.marks.enabled &&
+							this._state.marks.clearOnPress &&
+							this._state.marks.user.length > 0
+						) {
+							this.commit([]);
+						}
 						this.moveController.press(info.square, info.event, info.point);
 					}
 				},

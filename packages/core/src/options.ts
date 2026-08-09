@@ -37,6 +37,11 @@ export interface MarkOptions {
 	auto?: Mark[];
 	pens?: Record<string, Partial<Pen>>;
 	onChange?: MarksChangedHandler | null;
+	/** Wipe the user's marks when a move gesture starts (default true) -- the
+	 *  near-universal convention: drawing is scratch work for the position you
+	 *  are looking at, and touching a piece ends that thought. Position changes
+	 *  are a separate question the consumer owns. */
+	clearOnPress?: boolean;
 }
 
 export interface AnimateOptions {
@@ -89,6 +94,7 @@ export interface BoardState {
 		auto: Mark[];
 		pens: Pens;
 		onChange: MarksChangedHandler | null;
+		clearOnPress: boolean;
 	};
 	animate: Required<AnimateOptions>;
 	promotion: { enabled: boolean; onPromote: PromoteHandler | null };
@@ -96,10 +102,10 @@ export interface BoardState {
 }
 
 export const DEFAULT_PENS: Pens = {
-	green: { color: "#15781B", width: 10, opacity: 1 },
-	red: { color: "#882020", width: 10, opacity: 1 },
-	blue: { color: "#003088", width: 10, opacity: 1 },
-	yellow: { color: "#e68f00", width: 10, opacity: 1 },
+	green: { color: "#15781B", width: 10, opacity: 0.8 },
+	red: { color: "#882020", width: 10, opacity: 0.8 },
+	blue: { color: "#003088", width: 10, opacity: 0.8 },
+	yellow: { color: "#e68f00", width: 10, opacity: 0.8 },
 };
 
 export function defaultState(): BoardState {
@@ -135,6 +141,7 @@ export function defaultState(): BoardState {
 			auto: [],
 			pens: { ...DEFAULT_PENS },
 			onChange: null,
+			clearOnPress: true,
 		},
 		animate: {
 			enabled: true,
@@ -253,6 +260,9 @@ export function applyOptions(state: BoardState, options: BoardOptions): BoardSta
 		if (marks.onChange !== undefined) {
 			next.marks.onChange = marks.onChange;
 		}
+		if (marks.clearOnPress !== undefined) {
+			next.marks.clearOnPress = marks.clearOnPress;
+		}
 		if (marks.pens !== undefined) {
 			// Deep merge: DEFAULT_PENS + current pens + new partials
 			const merged: Pens = {};
@@ -263,7 +273,7 @@ export function applyOptions(state: BoardState, options: BoardOptions): BoardSta
 				const base: Pen = merged[key] ?? DEFAULT_PENS[key] ?? {
 					color: "#000000",
 					width: 10,
-					opacity: 1,
+					opacity: 0.8,
 				};
 				merged[key] = { ...base, ...state.marks.pens[key] };
 			}
@@ -271,7 +281,7 @@ export function applyOptions(state: BoardState, options: BoardOptions): BoardSta
 				const base: Pen = merged[key] ?? DEFAULT_PENS[key] ?? {
 					color: "#000000",
 					width: 10,
-					opacity: 1,
+					opacity: 0.8,
 				};
 				merged[key] = { ...base, ...marks.pens[key] };
 			}

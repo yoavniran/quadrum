@@ -16,13 +16,15 @@ export function renderSquares(
 	state: BoardState,
 	deco: SquareDecorations,
 ): void {
-	const checkSquare: Square | null = typeof state.checkSide === "string"
-		? isSquare(state.checkSide)
+	// `checkSide` is either a square ("e1") or a colour ("white"), and both are
+	// strings — so the colour case must be recognised by elimination, not by
+	// `typeof`. Testing `typeof === "string"` first swallowed every colour and
+	// dropped the highlight entirely.
+	const checkSquare: Square | null = state.checkSide === null
+		? null
+		: isSquare(state.checkSide)
 			? state.checkSide
-			: null
-		: state.checkSide
-			? kingSquare(state.pieces, state.checkSide)
-			: null;
+			: kingSquare(state.pieces, state.checkSide);
 
 	const classes = new Map<Square, string[]>();
 

@@ -224,4 +224,58 @@ describe("moveInput", () => {
 		expect(deleted).toEqual([]);
 		expect(placed).toEqual([]);
 	});
+
+	it("a selection left on an emptied square does not swallow the next press", () => {
+		// A consumer that edits the position (a board editor) can erase the
+		// piece under the current selection between two presses. The stale
+		// selection used to eat every press after that — free mode makes every
+		// square a target, so the press read as "play from the selection", the
+		// play no-opped for want of a piece, and no drag ever armed again.
+		const { ctx, played, setSelectedCalls } = createFakeContext({
+			moves: { free: true },
+			selected: "e5", // empty in the start position
+		});
+
+		const controller = createMoveController(ctx);
+		const point = { x: 0.5, y: 0.5 };
+
+		controller.press("e2", {} as PointerEvent, point);
+
+		expect(played).toEqual([]);
+		expect(setSelectedCalls).toEqual(["e2"]);
+		expect(controller.dragging).toBe(true);
+	});
+
+	it("reports a completed click through onTap, empty squares included", () => {
+		const tapped: (Square | null)[] = [];
+		const { ctx } = createFakeContext({
+			select: { onTap: (square: Square | null) => tapped.push(square) },
+		});
+
+		const controller = createMoveController(ctx);
+		const point = { x: 0.5, y: 0.5 };
+
+		// e5 is empty, so selection never lands there — only a tap reports it.
+		controller.press("e5", {} as PointerEvent, point);
+		controller.release("e5", point);
+
+		expect(tapped).toEqual(["e5"]);
+	});
+
+	it("does not report a tap when the press became a drag", () => {
+		const tapped: (Square | null)[] = [];
+		const { ctx } = createFakeContext({
+			moves: { targets: new Map([["e2", ["e4"]]]) },
+			select: { onTap: (square: Square | null) => tapped.push(square) },
+		});
+
+		const controller = createMoveController(ctx);
+		const point = { x: 0.5, y: 0.5 };
+
+		controller.press("e2", {} as PointerEvent, point);
+		controller.drag("e4", point, 10);
+		controller.release("e4", point);
+
+		expect(tapped).toEqual([]);
+	});
 });

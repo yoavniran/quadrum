@@ -97,10 +97,15 @@ export function createMoveController(ctx: MoveContext): MoveController {
 
 			const state = ctx.state();
 			selectedAtPress = state.selected;
-			const targets = state.selected ? targetsFor(state.selected) : [];
+			// A selection is only playable while its piece is still standing
+			// there, and it may not be: the consumer can erase or replace the
+			// position between the two clicks of a click-move. A stale one
+			// falls through to the branches below, which re-select or clear it.
+			const playable = state.selected !== null && canMoveFrom(state.selected);
+			const targets = playable ? targetsFor(state.selected) : [];
 
 			// Check if this is a legal target of the current selection
-			if (state.selected && square !== null && targets.includes(square)) {
+			if (playable && state.selected && square !== null && targets.includes(square)) {
 				ctx.play(state.selected, square);
 				return;
 			}
@@ -195,6 +200,13 @@ export function createMoveController(ctx: MoveContext): MoveController {
 				if (selectedAtPress === square && ctx.state().selected === square) {
 					ctx.setSelected(null);
 				}
+
+				// Report the gesture itself, after the selection settles. Selection
+				// can't stand in for this: it only lands on squares a piece can move
+				// from, so a press on an empty square reports null there and a
+				// position editor could never place a piece. Fired last so a handler
+				// that rewrites the position sees final selection state.
+				ctx.state().select.onTap?.(square);
 				return;
 			}
 

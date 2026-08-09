@@ -19,6 +19,7 @@ export type {
 	MoveMeta,
 	MovePlayedHandler,
 	SelectHandler,
+	SquareTapHandler,
 	PositionChangedHandler,
 	MarksChangedHandler,
 	PromoteHandler,

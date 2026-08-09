@@ -14,15 +14,16 @@ export function premoveTargets(pieces: Pieces, from: Square, opts?: MobilityOpti
 	const rank = rankIndex(from);
 	const targets = new Set<Square>();
 
+	// A premove is answering a reply that hasn't arrived, so occupancy by one of
+	// your OWN pieces does not rule a square out: the bet is that the opponent
+	// captures that piece and the square is empty by the time the premove runs.
+	// (The castling branch below already says as much about its chess960
+	// targets.) So the only thing occupancy decides here is where a ray STOPS —
+	// never whether its final square is offered.
 	function addTarget(sq: Square | null): void {
-		if (sq && !wouldBeAttackedByOwnColor(sq)) {
+		if (sq) {
 			targets.add(sq);
 		}
-	}
-
-	function wouldBeAttackedByOwnColor(sq: Square): boolean {
-		const target = pieces.get(sq);
-		return !!target && target.color === color;
 	}
 
 	function addRay(df: number, dr: number): void {
@@ -32,16 +33,12 @@ export function premoveTargets(pieces: Pieces, from: Square, opts?: MobilityOpti
 		while (f >= 0 && f <= 7 && r >= 0 && r <= 7) {
 			const sq = squareAt(f, r);
 			if (!sq) break;
-			const target = pieces.get(sq);
 
-			if (target) {
-				if (target.color !== color) {
-					targets.add(sq);
-				}
-				break;
-			}
-
+			// The blocking square itself is a target whatever colour sits on it;
+			// the ray simply cannot continue past it.
 			targets.add(sq);
+			if (pieces.get(sq)) break;
+
 			f += df;
 			r += dr;
 		}
@@ -71,10 +68,7 @@ export function premoveTargets(pieces: Pieces, from: Square, opts?: MobilityOpti
 		for (const df of [-1, 1]) {
 			const diagFile = file + df;
 			const diagRank = rank + dir;
-			const sq = squareAt(diagFile, diagRank);
-			if (sq && !wouldBeAttackedByOwnColor(sq)) {
-				targets.add(sq);
-			}
+			addTarget(squareAt(diagFile, diagRank));
 		}
 	} else if (piece.role === "knight") {
 		const moves = [

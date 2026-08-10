@@ -274,11 +274,17 @@ describe("board", () => {
 		// over-the-pieces one; landing in the same layer would put one end of the
 		// arrow on the wrong side of the piece it touches.
 		const shafts = container.querySelectorAll('.qd-marks [data-mark="arrow"]');
-		const heads = container.querySelectorAll('.qd-heads [data-mark="arrowhead"]');
+		const heads = container.querySelectorAll('.qd-heads [data-mark-part="head"]');
 		expect(shafts).toHaveLength(1);
 		expect(heads).toHaveLength(1);
-		expect(container.querySelectorAll('.qd-marks [data-mark="arrowhead"]')).toHaveLength(0);
-		expect(container.querySelectorAll('.qd-heads [data-mark="arrow"]')).toHaveLength(0);
+		expect(container.querySelectorAll('.qd-marks [data-mark-part="head"]')).toHaveLength(0);
+		expect(container.querySelectorAll('.qd-heads [data-mark]')).toHaveLength(0);
+
+		// Both halves answer for the same mark, so either one can be found by its
+		// squares and pen.
+		expect(heads[0]!.getAttribute("data-from")).toBe("a1");
+		expect(heads[0]!.getAttribute("data-to")).toBe("a8");
+		expect(heads[0]!.getAttribute("data-pen")).toBe(shafts[0]!.getAttribute("data-pen"));
 
 		const ysOf = (el: Element) =>
 			el
@@ -320,6 +326,30 @@ describe("board", () => {
 		// They must overlap slightly, never merely touch: two shapes sharing an
 		// edge exactly antialias into a visible hairline seam.
 		expect(Math.min(...shaftYs)).toBeLessThan(Math.max(...headYs));
+
+		board.unmount();
+	});
+
+	it("stamps data-mark once per mark, however many shapes the mark is drawn from", () => {
+		// Regression: splitting the arrow across the two layers put data-mark on
+		// both halves, so [data-mark] started counting shapes instead of marks and
+		// every arrow was counted twice -- by application code as much as by tests.
+		const board = createBoard(container, {
+			animate: { enabled: false },
+			marks: {
+				user: [
+					{ from: "g1", to: "f3" },
+					{ from: "b1", to: "c3" },
+					{ from: "e5" },
+				],
+			},
+		});
+
+		expect(container.querySelectorAll("[data-mark]")).toHaveLength(3);
+		expect(container.querySelectorAll('[data-mark="arrow"]')).toHaveLength(2);
+		expect(container.querySelectorAll('[data-mark="circle"]')).toHaveLength(1);
+		// The heads are still there -- they are simply parts, not marks.
+		expect(container.querySelectorAll('[data-mark-part="head"]')).toHaveLength(2);
 
 		board.unmount();
 	});

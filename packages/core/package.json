@@ -1,6 +1,6 @@
 {
   "name": "quadrum",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "MIT, zero-dependency chess board renderer for the web",
   "license": "MIT",
   "author": "Yoav Niran",

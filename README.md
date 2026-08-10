@@ -40,6 +40,21 @@ It also fixes a handful of structural problems that force chessground consumers 
 | Arrow opacity applies to the stem but not the head | Opacity is applied to a group wrapping both |
 | Destination hints are drawn imperatively at selection time | They are part of the normal declarative render pass |
 
+### Performance
+
+Measured against [chessground](https://github.com/lichess-org/chessground) 9.2.1, installed as a
+dev-only dependency of the benchmark app and never shipped.
+
+<!-- bench:headline:start -->
+_No published run yet. The table below is generated from a scheduled benchmark run and spliced in
+between these markers; it will appear after the first nightly run lands._
+<!-- bench:headline:end -->
+
+Absolute milliseconds on a throttled shared runner are not desktop numbers; the ratios are the
+durable part. The benchmarks are written and run by quadrum's author — full statement of interest,
+methodology, every scenario, dispersion and raw samples:
+**[apps/bench/README.md](apps/bench/README.md)**.
+
 ## Packages
 
 | Package | What it is |

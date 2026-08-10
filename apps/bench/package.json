@@ -1,0 +1,27 @@
+{
+	"name": "quadrum-bench",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"engines": {
+		"node": ">=24"
+	},
+	"scripts": {
+		"dev": "vite --port 5373 --strictPort",
+		"build": "vite build",
+		"preview": "vite preview --port 5373 --strictPort",
+		"bench": "node runner/run.ts",
+		"bench:quick": "node runner/run.ts --runs 1 --throttle 1",
+		"typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.runner.json"
+	},
+	"dependencies": {
+		"quadrum": "workspace:*"
+	},
+	"devDependencies": {
+		"@playwright/test": "^1.62.1",
+		"@types/node": "^24.10.1",
+		"chessground": "9.2.1",
+		"typescript": "^7.0.2",
+		"vite": "^8.2.1"
+	}
+}

@@ -1,0 +1,133 @@
+/**
+ * Styling for the benchmark page. Plain CSS, dark-on-light, system font stack.
+ */
+
+body {
+	margin: 0;
+	font-family: system-ui, -apple-system, sans-serif;
+	background: #f7f7f8;
+	color: #16161a;
+}
+
+.bench-app {
+	max-width: 1200px;
+	margin: 0 auto;
+	padding: 24px;
+}
+
+.bench-header h1 {
+	font-size: 20px;
+	margin: 0 0 4px;
+}
+
+.bench-header p {
+	margin: 0 0 20px;
+	color: #55555f;
+	font-size: 14px;
+	max-width: 70ch;
+}
+
+.bench-controls {
+	display: flex;
+	gap: 12px;
+	align-items: center;
+	flex-wrap: wrap;
+	margin-bottom: 20px;
+}
+
+.bench-controls select,
+.bench-controls button {
+	font: 14px inherit;
+	padding: 6px 12px;
+	border: 1px solid #c9c9d1;
+	border-radius: 6px;
+	background: #fff;
+}
+
+.bench-controls button {
+	cursor: pointer;
+	background: #16161a;
+	color: #fff;
+	border-color: #16161a;
+}
+
+.bench-controls button:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.bench-boards {
+	display: flex;
+	gap: 24px;
+	flex-wrap: wrap;
+	margin-bottom: 24px;
+}
+
+.bench-board-slot {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.bench-board-label {
+	font-size: 13px;
+	font-weight: 600;
+	color: #55555f;
+}
+
+.bench-results table {
+	border-collapse: collapse;
+	width: 100%;
+	font-size: 13px;
+}
+
+.bench-results th,
+.bench-results td {
+	text-align: left;
+	padding: 6px 10px;
+	border-bottom: 1px solid #e4e4ea;
+}
+
+.bench-results th {
+	font-weight: 600;
+	color: #55555f;
+}
+
+.bench-results td.num {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+.bench-results .win {
+	color: #1a7f37;
+	font-weight: 600;
+}
+
+.bench-results .loss {
+	color: #b3261e;
+	font-weight: 600;
+}
+
+.bench-results .tie {
+	color: #55555f;
+}
+
+.bench-log {
+	font-family: ui-monospace, "SFMono-Regular", "Menlo", monospace;
+	font-size: 12px;
+	background: #16161a;
+	color: #d6d6de;
+	padding: 12px;
+	border-radius: 6px;
+	height: 180px;
+	overflow: auto;
+	white-space: pre-wrap;
+	margin-top: 20px;
+}
+
+.bench-note {
+	font-size: 12px;
+	color: #55555f;
+	margin-top: 12px;
+	max-width: 80ch;
+}

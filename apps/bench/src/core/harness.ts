@@ -1,0 +1,209 @@
+/**
+ * Owns warmup, ABBA interleaving, discard and pairing.
+ */
+
+import { summarize, ratio } from "./stats";
+import { settle } from "./clock";
+import { getAdapter, DEFAULT_ORDER } from "../adapters/registry";
+import type {
+	Scenario,
+	ScenarioOptions,
+	ScenarioComparison,
+	ScenarioRunResult,
+	AdapterId,
+	Metric,
+	ScenarioContext,
+	BenchHooks,
+} from "./types";
+
+/**
+ * ABBA interleaving for a given number of repetitions.
+ * For reps=2 over ['quadrum','chessground'] yields
+ * ['quadrum','chessground','chessground','quadrum'].
+ * Each repetition emits the pair forward then reversed.
+ */
+export function abbaOrder(reps: number, ids: readonly AdapterId[]): AdapterId[] {
+	const result: AdapterId[] = [];
+	for (let rep = 0; rep < reps; rep++) {
+		result.push(...ids);
+		result.push(...ids.slice().reverse());
+	}
+	return result;
+}
+
+/**
+ * Create a clean host element with the given size.
+ */
+export function makeHost(container: HTMLElement, sizePx: number): HTMLElement {
+	const host = document.createElement("div");
+	host.className = "bench-frame";
+	host.style.setProperty("--bench-size", `${sizePx}px`);
+	container.appendChild(host);
+	return host;
+}
+
+/**
+ * Apply discard to samples and return both kept and discarded arrays.
+ */
+export function applyDiscard(
+	samples: readonly number[],
+	discardFirst: number,
+): { kept: number[]; discarded: number[] } {
+	const discarded = samples.slice(0, discardFirst);
+	const kept = samples.slice(discardFirst);
+	return { kept: Array.from(kept), discarded: Array.from(discarded) };
+}
+
+/**
+ * Build a metric from samples, applying discard and computing the headline value.
+ */
+export function metricFromSamples(
+	key: string,
+	label: string,
+	samples: readonly number[],
+	opts: {
+		unit: Metric["unit"];
+		direction: Metric["direction"];
+		statistic: "median" | "p95";
+		discardFirst: number;
+	},
+): Metric {
+	const { kept, discarded } = applyDiscard(samples, opts.discardFirst);
+	const stats = summarize(kept);
+	const value =
+		opts.statistic === "median" ? stats.median : stats.p95;
+
+	return {
+		key,
+		label,
+		unit: opts.unit,
+		direction: opts.direction,
+		value,
+		samples: Array.from(kept),
+		discarded: Array.from(discarded),
+	};
+}
+
+/**
+ * Run a scenario comparison between both adapters.
+ * Interleaves with ABBA, handles warmup and discard.
+ */
+export async function runComparison(args: {
+	scenario: Scenario;
+	container: HTMLElement;
+	options: ScenarioOptions;
+	hooks: BenchHooks;
+	signal: AbortSignal;
+	log: (m: string) => void;
+}): Promise<ScenarioComparison> {
+	const { scenario, container, options, hooks, signal, log } = args;
+
+	const startTime = performance.now();
+	const results: Map<AdapterId, ScenarioRunResult> = new Map();
+
+	// Run one warmup pass per adapter (discarded entirely)
+	for (const id of DEFAULT_ORDER) {
+		if (signal.aborted) {
+			throw new DOMException("aborted", "AbortError");
+		}
+		const factory = getAdapter(id);
+		const host = makeHost(container, options.sizePx);
+		const ctx: ScenarioContext = {
+			host,
+			factory,
+			options,
+			log,
+			signal,
+			hooks,
+		};
+
+		try {
+			await scenario.run(ctx);
+			log(`warmup ${id}`);
+		} finally {
+			host.remove();
+			host.innerHTML = "";
+		}
+
+		await settle();
+	}
+
+	// Run the actual passes with ABBA interleaving
+	const order = abbaOrder(1, DEFAULT_ORDER);
+	for (const id of order) {
+		if (signal.aborted) {
+			throw new DOMException("aborted", "AbortError");
+		}
+		const factory = getAdapter(id);
+		const host = makeHost(container, options.sizePx);
+		const ctx: ScenarioContext = {
+			host,
+			factory,
+			options,
+			log,
+			signal,
+			hooks,
+		};
+
+		try {
+			const result = await scenario.run(ctx);
+			results.set(id, result);
+			log(`pass ${id}`);
+		} finally {
+			host.remove();
+			host.innerHTML = "";
+		}
+
+		await settle();
+	}
+
+	// Merge results: build ratios and check validity
+	const ratios: Record<string, number> = {};
+	const quadrumResult = results.get("quadrum");
+	const chessgroundResult = results.get("chessground");
+
+	if (quadrumResult && chessgroundResult) {
+		const allKeys = new Set<string>();
+		for (const m of quadrumResult.metrics) {
+			allKeys.add(m.key);
+		}
+		for (const m of chessgroundResult.metrics) {
+			allKeys.add(m.key);
+		}
+
+		for (const key of allKeys) {
+			const qMetric = quadrumResult.metrics.find((m) => m.key === key);
+			const cMetric = chessgroundResult.metrics.find((m) => m.key === key);
+
+			if (qMetric && cMetric) {
+				let r = ratio(qMetric.value, cMetric.value);
+				// Invert if direction is "higher"
+				if (qMetric.direction === "higher") {
+					r = ratio(cMetric.value, qMetric.value);
+				}
+				ratios[key] = r;
+			}
+		}
+	}
+
+	const allAssertionsPassed =
+		(!quadrumResult || quadrumResult.assertions.every((a) => a.passed)) &&
+		(!chessgroundResult || chessgroundResult.assertions.every((a) => a.passed));
+
+	const valid =
+		allAssertionsPassed && !!quadrumResult && !!chessgroundResult;
+
+	const durationMs = performance.now() - startTime;
+
+	return {
+		scenarioId: scenario.id,
+		options,
+		byAdapter: {
+			...(quadrumResult ? { quadrum: quadrumResult } : {}),
+			...(chessgroundResult ? { chessground: chessgroundResult } : {}),
+		},
+		ratios,
+		valid,
+		durationMs,
+	};
+}

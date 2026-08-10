@@ -1,4 +1,7 @@
 import { createBoard } from "../src/board";
+import { buildDom } from "../src/view/layout";
+import { renderMarks } from "../src/view/marksView";
+import { defaultState, applyOptions } from "../src/options";
 
 describe("board", () => {
 	let container: HTMLElement;
@@ -352,6 +355,77 @@ describe("board", () => {
 		expect(container.querySelectorAll('[data-mark-part="head"]')).toHaveLength(2);
 
 		board.unmount();
+	});
+
+	it("draws a user mark over an automatic one on the same squares, not instead of it", () => {
+		// Regression: user and auto marks were folded into one map keyed by
+		// from+to, so an arrow drawn over the move an engine was suggesting --
+		// the common case -- silently replaced it. Worse, it looked like the
+		// user's arrow vanishing on release: while being drawn it is `current`,
+		// which was set last and so won the collision.
+		const board = createBoard(container, {
+			animate: { enabled: false },
+			marks: {
+				auto: [{ from: "e2", to: "e4", pen: "green" }],
+				user: [{ from: "e2", to: "e4", pen: "blue" }],
+			},
+		});
+
+		const pens = () =>
+			[...container.querySelectorAll('.qd-marks [data-mark="arrow"]')].map((arrow) =>
+				arrow.getAttribute("data-pen"),
+			);
+
+		// Both survive, and the user's is painted second so it lands on top --
+		// within a layer the DOM order is the paint order.
+		expect(pens()).toEqual(["green", "blue"]);
+
+		board.unmount();
+	});
+
+	it("still collapses duplicate marks within a single source", () => {
+		// Deduping moved per-source; it must not have been lost along the way.
+		const board = createBoard(container, {
+			animate: { enabled: false },
+			marks: {
+				auto: [
+					{ from: "e2", to: "e4", pen: "green" },
+					{ from: "e2", to: "e4", pen: "red" },
+				],
+				user: [
+					{ from: "d2", to: "d4", pen: "green" },
+					{ from: "d2", to: "d4", pen: "blue" },
+				],
+			},
+		});
+
+		// One arrow per source, the later of each pair winning.
+		expect(container.querySelectorAll('[data-mark="arrow"]')).toHaveLength(2);
+		expect(container.querySelectorAll('[data-mark="arrow"][data-pen="red"]')).toHaveLength(1);
+		expect(container.querySelectorAll('[data-mark="arrow"][data-pen="blue"]')).toHaveLength(1);
+
+		board.unmount();
+	});
+
+	it("lets the in-progress mark supersede the finished user mark it is redrawing", () => {
+		// Redrawing an arrow that already exists must not paint two stacked
+		// copies of it -- `current` replaces its own key within the user source,
+		// which is the one dedupe that survives across the auto/user split.
+		const dom = buildDom(container);
+		const state = applyOptions(defaultState(), {
+			marks: {
+				auto: [{ from: "e2", to: "e4", pen: "green" }],
+				user: [{ from: "a1", to: "a8", pen: "blue" }],
+			},
+		});
+
+		renderMarks(dom, state, { from: "a1", to: "a8", pen: "red" });
+
+		const pens = [...container.querySelectorAll('.qd-marks [data-mark="arrow"]')].map((arrow) =>
+			arrow.getAttribute("data-pen"),
+		);
+		// The auto mark, then the redraw standing in for the user mark it replaces.
+		expect(pens).toEqual(["green", "red"]);
 	});
 
 	it("rebuilds the arrows' fade gradients each render instead of piling them up", () => {

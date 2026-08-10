@@ -18,6 +18,17 @@ export function markKey(mark: Mark): string {
 	return mark.to ? `${mark.from}${mark.to}` : mark.from;
 }
 
+/** Collapses one source's marks by key, last one winning, preserving order. */
+function byKey(marks: readonly Mark[]): Map<string, Mark> {
+	const collapsed = new Map<string, Mark>();
+
+	for (const mark of marks) {
+		collapsed.set(markKey(mark), mark);
+	}
+
+	return collapsed;
+}
+
 export function resolvePen(state: BoardState, mark: Mark): Pen {
 	const penKey = mark.pen ?? "green";
 	return state.marks.pens[penKey] ?? state.marks.pens.green;
@@ -133,25 +144,30 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 		return;
 	}
 
-	// Combine marks with current winning on equal key
-	const keyToMark = new Map<string, Mark>();
+	// Auto and user marks are deduped separately and drawn auto-first, so a
+	// hand-drawn mark layers *over* an engine's suggestion instead of replacing
+	// it. Both routinely name the same pair of squares -- drawing over the move
+	// the engine is proposing is the common case -- and folding them into one
+	// map by key silently dropped whichever came first. That read as the user's
+	// arrow vanishing the instant it was released: while it is being drawn it is
+	// `current`, which was set last and therefore won.
+	//
+	// Only within one source does a later mark win over an earlier one on the
+	// same key.
+	const auto = byKey(state.marks.auto);
+	const user = byKey(state.marks.user);
 
-	for (const mark of state.marks.user) {
-		keyToMark.set(markKey(mark), mark);
-	}
-
-	for (const mark of state.marks.auto) {
-		keyToMark.set(markKey(mark), mark);
-	}
-
+	// The in-progress mark supersedes the finished user mark it is redrawing, so
+	// a redraw paints one arrow rather than two stacked copies of it.
 	if (current) {
-		keyToMark.set(markKey(current), current);
+		user.set(markKey(current), current);
 	}
 
 	clearLayers(dom);
 
-	// Render all marks
-	for (const mark of keyToMark.values()) {
+	// Render all marks. Within a layer the DOM order is the paint order, so the
+	// user's marks land on top of the automatic ones.
+	for (const mark of [...auto.values(), ...user.values()]) {
 		const pen = resolvePen(state, mark);
 		const penKey = mark.pen ?? "green";
 		const fromPoint = squareToPoint(mark.from, state.orientation);

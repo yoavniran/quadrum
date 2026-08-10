@@ -5,6 +5,13 @@
   </picture>
 </p>
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/quadrum"><img src="https://img.shields.io/npm/v/quadrum?label=quadrum&color=blue" alt="quadrum on npm"></a>
+  <a href="https://www.npmjs.com/package/quadrum-react"><img src="https://img.shields.io/npm/v/quadrum-react?label=quadrum-react&color=blue" alt="quadrum-react on npm"></a>
+  <a href="https://github.com/yoavniran/quadrum/actions/workflows/ci.yml"><img src="https://github.com/yoavniran/quadrum/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/npm/l/quadrum?color=green" alt="MIT licence"></a>
+</p>
+
 # Quadrum
 
 A small, MIT-licensed, **zero-dependency** chess **board renderer** for the web, with
@@ -15,7 +22,8 @@ click-to-move, dragging and hand-drawn arrows and circles. It does **not** know 
 of chess: legal destinations are handed in by the consumer, which keeps it usable with
 any rules engine (chess.js, a server, a variant) and keeps the library small.
 
-> **Status: pre-alpha.** The API is settled but nothing is published yet.
+> **Status: early.** Published on npm and in use, but still pre-1.0 — the API is
+> settled in shape and may still shift in detail before it is frozen.
 
 ## Why it exists
 

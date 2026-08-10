@@ -132,7 +132,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: playwright-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -233,7 +233,7 @@ jobs:
           cache: pnpm
 
       - name: Download the results
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: bench-results-${{ github.run_id }}
           path: apps/bench/results/
@@ -245,7 +245,7 @@ jobs:
             apps/bench/results/latest.json --readme README.md
 
       - name: Open the refresh PR
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: bench/refresh-numbers
           title: "docs: refresh the published benchmark numbers"

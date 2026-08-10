@@ -171,11 +171,15 @@ The review rule that follows from this, and the one to hold any PR here to:
 ```sh
 pnpm --filter quadrum-bench dev        # visual page: both boards, scenario picker, live table
 pnpm bench                             # full headless run -> results/latest.json
-pnpm bench -- --scenario mount --runs 3
-pnpm bench -- --scenario gated         # only the blocking scenarios
-pnpm bench -- --compare results/baseline.json
-pnpm bench -- --headed                 # real vsync; the frame metrics stop being advisory
+pnpm bench --scenario mount --runs 3
+pnpm bench --scenario gated            # only the blocking scenarios
+pnpm bench --compare results/baseline.json
+pnpm bench --headed                    # real vsync; the frame metrics stop being advisory
 ```
+
+Pass the flags straight through, with **no `--` separator**. `pnpm run` forwards a `--`
+verbatim into the nested workspace script, so the runner would receive it as an argument;
+it now tolerates one rather than dying on it, but the plain form is the documented one.
 
 `--runs` is between-process repetition (a fresh browser each time); `--iterations` is within-page.
 Both are recorded. `--runs` defaults to 7 — odd, so the median is a real sample.

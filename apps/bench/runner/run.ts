@@ -2,12 +2,12 @@
  * The runner CLI entry point.
  */
 
-import { parseArgs } from "node:util";
 import { writeFile, readFile, mkdir } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cpus, platform, arch } from "node:os";
+import { parseRunnerArgs } from "./args.ts";
 import { buildApp, startPreview, findFreePort } from "./server.ts";
 import { launch, openPage, installHooks } from "./browser.ts";
 import { measureBundles } from "./bundle-size.ts";
@@ -26,29 +26,7 @@ const __dirname = dirname(__filename);
 const NODE_MEASURED = ["bundle-size"];
 
 async function main() {
-	const { values } = parseArgs({
-		options: {
-			scenario: { type: "string", default: "all" },
-			runs: { type: "string", default: "7" },
-			throttle: { type: "string", default: "4" },
-			iterations: { type: "string" },
-			headed: { type: "boolean", default: false },
-			out: { type: "string", default: "results/latest.json" },
-			compare: { type: "string" },
-			"allow-dev": { type: "boolean", default: false },
-		},
-	});
-
-	const opts = {
-		scenario: String(values.scenario),
-		runs: parseInt(String(values.runs), 10),
-		throttle: parseFloat(String(values.throttle)),
-		iterations: values.iterations ? parseInt(String(values.iterations), 10) : null,
-		headed: Boolean(values.headed),
-		out: String(values.out),
-		compare: values.compare ? String(values.compare) : null,
-		allowDev: Boolean(values["allow-dev"]),
-	};
+	const opts = parseRunnerArgs(process.argv.slice(2));
 
 	const appRoot = resolve(__dirname, "..");
 	const startedAt = new Date();

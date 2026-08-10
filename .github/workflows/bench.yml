@@ -150,10 +150,13 @@ jobs:
         env:
           BENCH_TRIGGER: ${{ github.event_name }}
         run: |
+          # No `--` before the flags: `pnpm run` forwards it verbatim through the
+          # nested workspace script, so the runner would receive a bare `--` as
+          # its first argument.
           if [ "${{ github.event_name }}" = "pull_request" ] || [ "${{ github.event_name }}" = "push" ]; then
-            pnpm bench -- --scenario gated --runs 7
+            pnpm bench --scenario gated --runs 7
           else
-            pnpm bench -- --runs "${{ github.event.inputs.repetitions || 15 }}"
+            pnpm bench --runs "${{ github.event.inputs.repetitions || 15 }}"
           fi
 
       # always(): the raw JSON is the evidence, and it is most wanted precisely
@@ -196,7 +199,7 @@ jobs:
           PR_ACTOR: ${{ github.actor }}
         run: |
           echo "::notice::Gate failed; re-measuring the gated scenarios at 25 repetitions to confirm."
-          pnpm bench -- --scenario gated --runs 25 --out results/confirm.json
+          pnpm bench --scenario gated --runs 25 --out results/confirm.json
           node .github/scripts/write-bench-report.mjs gate \
             apps/bench/results/confirm.json \
             apps/bench/results/baseline.json

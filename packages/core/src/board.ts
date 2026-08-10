@@ -52,6 +52,10 @@ export class Board implements MoveContext, MarkContext {
 	private promotionRequest: { from: Square; to: Square; color: Color } | null =
 		null;
 	private fadingEls: HTMLElement[] = [];
+	/** Cleanup for the animation currently in flight, or null when none is.
+	 *  Cancelling an animation must still run it: the cleanup is what removes the
+	 *  cloned fade elements and strips the transient gliding/appearing state. */
+	private finishAnimation: (() => void) | null = null;
 
 	constructor(container: HTMLElement, options?: BoardOptions) {
 		this.container = container;
@@ -271,6 +275,13 @@ export class Board implements MoveContext, MarkContext {
 			this._state.animate.enabled &&
 			!samePieces(before, this._state.pieces)
 		) {
+			// Settle the outgoing animation before cancelling it. Its cleanup is the
+			// only thing that removes the cloned .vanishing elements and clears the
+			// gliding/appearing state, so dropping it leaks a piece node per capture
+			// and leaves half-faded pieces stuck at their interrupted opacity --
+			// which is what happens to any board updated faster than one animation
+			// duration.
+			this.settleAnimation();
 			this.animator.cancel();
 
 			const plan = planDiff(before, this._state.pieces, {
@@ -320,6 +331,37 @@ export class Board implements MoveContext, MarkContext {
 				el.classList.add("appearing");
 			});
 
+			// Restores every element this animation touched to its settled state.
+			// Shared by normal completion and cancellation so an interrupted
+			// animation leaves exactly what a completed one does.
+			const cleanup = (): void => {
+				moveData.forEach(({ el, toPoint }) => {
+					if (el) {
+						el.classList.remove("gliding");
+						el.style.transform = `translate(${toPoint.x * 100}%, ${toPoint.y * 100}%)`;
+					}
+				});
+
+				appearEls.forEach((el) => {
+					el.classList.remove("appearing");
+					el.style.removeProperty("opacity");
+				});
+
+				fadeEls.forEach((el) => {
+					el.remove();
+
+					const index = this.fadingEls.indexOf(el);
+
+					if (index !== -1) {
+						this.fadingEls.splice(index, 1);
+					}
+				});
+
+				this.finishAnimation = null;
+			};
+
+			this.finishAnimation = cleanup;
+
 			// Run single animation for all pieces
 			this.animator.run(
 				this._state.animate.duration,
@@ -343,23 +385,7 @@ export class Board implements MoveContext, MarkContext {
 						el.style.opacity = String(progress);
 					});
 				},
-				() => {
-					// Cleanup
-					moveData.forEach(({ el, toPoint }) => {
-						if (el) {
-							el.classList.remove("gliding");
-							el.style.transform = `translate(${toPoint.x * 100}%, ${toPoint.y * 100}%)`;
-						}
-					});
-
-					appearEls.forEach((el) => {
-						el.classList.remove("appearing");
-					});
-
-					fadeEls.forEach((el) => {
-						el.remove();
-					});
-				},
+				cleanup,
 			);
 		} else {
 			this.render();
@@ -425,10 +451,19 @@ export class Board implements MoveContext, MarkContext {
 		this.render();
 	}
 
+	/** Run the in-flight animation's cleanup, if there is one, and forget it. */
+	private settleAnimation(): void {
+		this.finishAnimation?.();
+		this.finishAnimation = null;
+	}
+
 	unmount(): void {
+		this.settleAnimation();
 		this.animator.cancel();
 		this.gestureBinding.destroy();
 		destroyDom(this._dom);
+		// Belt and braces: settleAnimation drains the current animation's clones,
+		// this catches anything left by an earlier code path.
 		this.fadingEls.forEach((el) => el.remove());
 		this.fadingEls = [];
 	}

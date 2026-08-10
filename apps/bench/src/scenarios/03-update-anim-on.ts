@@ -28,6 +28,7 @@ export const updateAnimOnScenario: Scenario = {
 		"Animation enabled on both at 200ms. Positions are applied one per animation frame, so both libraries face the same arrival rate.",
 	endCondition:
 		"All updates dispatched and one further frame has been painted.",
+	headlineMetric: "frame-interval-p95",
 	defaults: { sizePx: 480, iterations: 100, warmupIterations: 1, discardFirst: 10 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {

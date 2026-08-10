@@ -24,6 +24,7 @@ export const memoryScenario: Scenario = {
 	endCondition:
 		"All boards destroyed, hosts detached, three forced GCs complete, and the node/listener counters read back at that settled point.",
 	runnerOnly: true,
+	headlineMetric: "retained-nodes",
 	defaults: { sizePx: 480, iterations: 25, warmupIterations: 0, discardFirst: 0 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {

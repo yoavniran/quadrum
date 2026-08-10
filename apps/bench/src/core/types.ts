@@ -198,6 +198,15 @@ export interface Scenario {
 	readonly endCondition: string;
 	/** True when only the headless runner can produce real numbers. */
 	readonly runnerOnly?: boolean;
+	/**
+	 * The one metric key this scenario contributes to the headline table.
+	 *
+	 * Fixed here rather than chosen by the renderer, because "which number is
+	 * the headline" is exactly the choice a motivated author makes after seeing
+	 * the results. It is part of the scenario definition, in git, and changing
+	 * it is a reviewable diff.
+	 */
+	readonly headlineMetric: string;
 	readonly defaults: ScenarioOptions;
 	/** One adapter, one pass. The harness owns interleaving and repetition. */
 	run(ctx: ScenarioContext): Promise<ScenarioRunResult>;
@@ -224,8 +233,28 @@ export interface BenchEnv {
 	readonly chessgroundVersion: string;
 }
 
+/**
+ * Everything the runner needs to know about a scenario without importing it.
+ *
+ * The prose fields travel with the numbers all the way into the JSON on
+ * purpose: `parity` and `endCondition` are the two things benchmarks lie about
+ * most, so they are structured data a reader gets for free rather than
+ * documentation that can drift away from the code that produced the result.
+ */
+export interface ScenarioMeta {
+	readonly id: string;
+	readonly title: string;
+	readonly description: string;
+	readonly expectation: string;
+	readonly parity: string;
+	readonly endCondition: string;
+	readonly runnerOnly: boolean;
+	readonly headlineMetric: string;
+	readonly gated: boolean;
+}
+
 export interface BenchApi {
-	list(): Array<Pick<Scenario, "id" | "title" | "runnerOnly">>;
+	list(): ScenarioMeta[];
 	run(scenarioId: string, options?: Partial<ScenarioOptions>): Promise<ScenarioComparison>;
 	env(): BenchEnv;
 	setHooks(hooks: BenchHooks): void;

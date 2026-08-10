@@ -24,6 +24,7 @@ export const mountScenario: Scenario = {
 		"Both mounted with identical size, orientation, coordinates off, animation off, interactivity off, from the same FEN placement.",
 	endCondition:
 		"The board element has been laid out and all 32 piece boxes have non-zero geometry.",
+	headlineMetric: "mount-layout-ms",
 	defaults: { sizePx: 480, iterations: 25, warmupIterations: 2, discardFirst: 5 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {

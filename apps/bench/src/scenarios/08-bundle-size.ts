@@ -19,6 +19,7 @@ export const bundleSizeScenario: Scenario = {
 		"Both measured from a realistic adapter-surface entry (mount, update, arrows, drag, destroy), not `export *`, which is meaningless against subpath exports and pessimistic against a single entry.",
 	endCondition: "Three lib-mode builds complete and their raw/gzip/brotli byte counts are recorded.",
 	runnerOnly: true,
+	headlineMetric: "bundle-brotli-bytes",
 	defaults: { sizePx: 0, iterations: 1, warmupIterations: 0, discardFirst: 0 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {

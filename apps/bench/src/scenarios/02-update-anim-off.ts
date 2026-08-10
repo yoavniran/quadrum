@@ -24,6 +24,7 @@ export const updateAnimOffScenario: Scenario = {
 		"Animation disabled on both. Every update carries placement, lastMove and side-to-move, exactly as a real app does. Each update is flushed to the DOM inside the timed region, because chessground defers its render to a requestAnimationFrame while quadrum renders synchronously — without the flush chessground would be timed doing nothing and would collapse 100 updates into a single render.",
 	endCondition:
 		"Every position has been applied AND rendered into the DOM, and the board has been laid out; piece count matches the final placement.",
+	headlineMetric: "update-layout-ms",
 	defaults: { sizePx: 480, iterations: 100, warmupIterations: 1, discardFirst: 10 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {

@@ -4,7 +4,7 @@
  * schemaVersion is hard-failed on by report scripts, as this file lives in git for years.
  */
 
-import type { ScenarioComparison, BenchEnv } from "../src/core/types.ts";
+import type { ScenarioComparison, BenchEnv, ScenarioMeta } from "../src/core/types.ts";
 
 export interface RunnerOptions {
 	readonly scenario: string;
@@ -67,6 +67,13 @@ export interface RunRecord {
 		readonly order: "interleaved-abba";
 		readonly freshContextPerRepetition: boolean;
 	};
+	/**
+	 * Scenario definitions as the page reported them, including the parity and
+	 * end-condition prose. Carried in the record so the numbers and the method
+	 * that produced them cannot be separated.
+	 */
+	readonly scenarioMeta: readonly ScenarioMeta[];
+	/** One entry per repetition, each holding that repetition's comparisons. */
 	readonly scenarios: readonly (readonly ScenarioComparison[])[];
 	readonly bundleSizes: readonly BundleSizeResult[];
 	readonly caveats: readonly string[];

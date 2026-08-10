@@ -24,6 +24,7 @@ export const engineArrowTickScenario: Scenario = {
 		"Both mounted with drawing enabled and a static position; only the auto/engine arrow layer is replaced per tick. Neither adapter re-applies the FEN — doing so would make this measure a full position diff.",
 	endCondition:
 		"The new arrow layer is present in the DOM and laid out; the position is unchanged.",
+	headlineMetric: "arrow-tick-layout-ms",
 	defaults: { sizePx: 480, iterations: 100, warmupIterations: 2, discardFirst: 10 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {

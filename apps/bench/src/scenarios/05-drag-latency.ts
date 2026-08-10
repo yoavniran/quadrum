@@ -69,6 +69,7 @@ export const dragLatencyScenario: Scenario = {
 	endCondition:
 		"The library has entered its drag state and written a transform on the dragged piece, and the gesture has been released.",
 	runnerOnly: true,
+	headlineMetric: "drag-latency-p95-ms",
 	defaults: { sizePx: 480, iterations: 20, warmupIterations: 2, discardFirst: 5 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {

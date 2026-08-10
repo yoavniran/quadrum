@@ -3,7 +3,7 @@
  */
 
 import { parseArgs } from "node:util";
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, readFile, mkdir } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -51,6 +51,8 @@ async function main() {
 	};
 
 	const appRoot = resolve(__dirname, "..");
+	const startedAt = new Date();
+	const startedMs = Date.now();
 	let previewServer: { url: string; stop: () => Promise<void> } | null = null;
 
 	try {
@@ -68,6 +70,12 @@ async function main() {
 		const url = previewServer.url;
 
 		const allRuns: any[][] = [];
+		// Filled from the first repetition's page. Nothing here is hardcoded: a
+		// version string typed into the runner is a claim the run never checked,
+		// and it is exactly the field that goes stale after a dependency bump.
+		let scenarioMeta: any[] = [];
+		let pageEnv: any = null;
+		let browserVersion = "unknown";
 
 		for (let runIndex = 0; runIndex < opts.runs; runIndex++) {
 			console.log(`Run ${runIndex + 1}/${opts.runs}...`);
@@ -83,6 +91,12 @@ async function main() {
 					// Get the scenario list and filter
 					const scenarioList = await page.evaluate((): any => (globalThis as any).__bench.list());
 
+					if (scenarioMeta.length === 0) {
+						scenarioMeta = scenarioList;
+						pageEnv = await page.evaluate((): any => (globalThis as any).__bench.env());
+						browserVersion = browser.version();
+					}
+
 					let scenarioIds: string[] = [];
 					if (opts.scenario === "all") {
 						// runnerOnly does NOT mean "skip here" -- it means the visual page
@@ -94,7 +108,13 @@ async function main() {
 							.filter((s: any) => !NODE_MEASURED.includes(s.id))
 							.map((s: any) => s.id);
 					} else if (opts.scenario === "gated") {
-						scenarioIds = ["mount", "update-throughput-anim-off", "engine-arrow-tick"];
+						// Taken from the page's own registry, never re-listed here.
+						// A second copy of "which scenarios are gated" is how a
+						// scenario quietly stops being gated without a diff that
+						// says so.
+						scenarioIds = scenarioList
+							.filter((s: any) => s.gated && !NODE_MEASURED.includes(s.id))
+							.map((s: any) => s.id);
 					} else {
 						scenarioIds = [opts.scenario];
 					}
@@ -169,9 +189,9 @@ async function main() {
 		const record: RunRecord = {
 			schemaVersion: 1,
 			run: {
-				id: `run-${Date.now()}`,
-				startedAt: new Date().toISOString(),
-				durationMs: Date.now(),
+				id: `run-${startedMs}`,
+				startedAt: startedAt.toISOString(),
+				durationMs: Date.now() - startedMs,
 				trigger: process.env.BENCH_TRIGGER || "manual",
 				publishable,
 			},
@@ -187,24 +207,27 @@ async function main() {
 			},
 			browser: {
 				name: "chromium",
-				version: "latest",
+				version: browserVersion,
 				headless: !opts.headed,
 				viewport: { width: 1280, height: 900 },
 				deviceScaleFactor: 1,
 				cpuThrottlingRate: opts.throttle,
 			},
-			page: {
-				userAgent: "headless",
+			// Both read back from the page, which knows the versions it actually
+			// imported. If the run never got a page up, that failure is visible
+			// here as "unknown" rather than papered over with a plausible number.
+			page: pageEnv ?? {
+				userAgent: "unknown",
 				devicePixelRatio: 1,
 				hardwareConcurrency: cpus().length,
 				deviceMemory: null,
 				mode: "production",
-				quadrumVersion: "0.2.2",
-				chessgroundVersion: "9.2.1",
+				quadrumVersion: "unknown",
+				chessgroundVersion: "unknown",
 			},
 			subjects: {
-				quadrum: "0.2.2",
-				chessground: "9.2.1",
+				quadrum: pageEnv?.quadrumVersion ?? "unknown",
+				chessground: pageEnv?.chessgroundVersion ?? "unknown",
 			},
 			config: {
 				repetitions: opts.runs,
@@ -212,6 +235,7 @@ async function main() {
 				order: "interleaved-abba",
 				freshContextPerRepetition: true,
 			},
+			scenarioMeta,
 			scenarios: allRuns,
 			bundleSizes,
 			caveats: [
@@ -236,7 +260,30 @@ async function main() {
 		await writeFile(opts.out, JSON.stringify(record, null, 2));
 		console.log(`Results written to ${opts.out}`);
 
-		process.exit(exitCodeFor(aggregated));
+		let exitCode = exitCodeFor(aggregated);
+
+		if (opts.compare) {
+			// The gate logic lives in .github/scripts/bench-report.mjs and is
+			// imported rather than reimplemented: CI and a local `pnpm bench
+			// --compare` must reach the same verdict, and two implementations of
+			// a regression rule eventually disagree in whichever direction is
+			// convenient.
+			const { summarizeRun, compareToBaseline, renderGateSummary } = await import(
+				resolve(appRoot, "../../.github/scripts/bench-report.mjs")
+			);
+			const baseline = JSON.parse(
+				await readFile(resolve(appRoot, opts.compare), "utf-8"),
+			);
+			const gate = compareToBaseline(summarizeRun(record), baseline, {});
+
+			console.log(`\n${renderGateSummary(gate)}`);
+
+			if (!gate.ok) {
+				exitCode = 1;
+			}
+		}
+
+		process.exit(exitCode);
 	} finally {
 		if (previewServer) {
 			await previewServer.stop();

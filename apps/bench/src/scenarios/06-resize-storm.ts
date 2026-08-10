@@ -23,6 +23,7 @@ export const resizeStormScenario: Scenario = {
 		"Both are resized through the same host-box style write. Each adapter then does whatever it needs to remain CORRECT — which for chessground means redrawAll(). The contract is a correct, clickable board afterwards, not an equal number of method calls.",
 	endCondition:
 		"The board box has the new size AND a click at the centre of a known square still resolves to that square.",
+	headlineMetric: "resize-layout-ms",
 	defaults: { sizePx: 480, iterations: 50, warmupIterations: 2, discardFirst: 5 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {

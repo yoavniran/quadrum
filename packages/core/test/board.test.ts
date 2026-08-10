@@ -264,31 +264,86 @@ describe("board", () => {
 		expect(container.querySelectorAll(".hover")).toHaveLength(0);
 	});
 
-	it("draws an arrow as one polygon rooted at its origin square's centre", () => {
+	it("splits an arrow across the layers so it starts behind a piece and ends on top of one", () => {
 		const board = createBoard(container, {
 			animate: { enabled: false },
 			marks: { user: [{ from: "a1", to: "a8" }] },
 		});
 
-		const arrows = container.querySelectorAll('.qd-marks [data-mark="arrow"]');
-		expect(arrows).toHaveLength(1);
+		// The shaft belongs to the under-the-pieces layer and the head to the
+		// over-the-pieces one; landing in the same layer would put one end of the
+		// arrow on the wrong side of the piece it touches.
+		const shafts = container.querySelectorAll('.qd-marks [data-mark="arrow"]');
+		const heads = container.querySelectorAll('.qd-heads [data-mark="arrowhead"]');
+		expect(shafts).toHaveLength(1);
+		expect(heads).toHaveLength(1);
+		expect(container.querySelectorAll('.qd-marks [data-mark="arrowhead"]')).toHaveLength(0);
+		expect(container.querySelectorAll('.qd-heads [data-mark="arrow"]')).toHaveLength(0);
 
-		// A shaft and a head drawn as separate elements only meet if their
-		// lengths agree; as one polygon they cannot come apart.
-		const arrow = arrows[0] as SVGPolygonElement;
-		expect(arrow.tagName).toBe("polygon");
-		expect(Number(arrow.getAttribute("opacity"))).toBeLessThan(1);
+		const ysOf = (el: Element) =>
+			el
+				.getAttribute("points")!
+				.split(" ")
+				.map((p) => Number(p.split(",")[1]));
+
+		const shaft = shafts[0] as SVGPolygonElement;
+		const head = heads[0] as SVGPolygonElement;
+		expect(shaft.tagName).toBe("polygon");
+		expect(head.tagName).toBe("polygon");
+		// The over-the-pieces half must be opaque, or the piece it covers shows
+		// through it. The shaft is translucent against the board, which it gets
+		// from a gradient that ramps up to opaque so the two halves meet at the
+		// same tone rather than stepping mid-arrow.
+		expect(Number(head.getAttribute("opacity"))).toBe(1);
+		const fade = shaft.getAttribute("fill")!.match(/^url\(#(.+)\)$/);
+		expect(fade).not.toBeNull();
+		expect(shaft.getAttribute("opacity")).toBeNull();
+		const stops = container.querySelectorAll(`.qd-marks defs #${fade![1]} stop`);
+		expect(Array.from(stops).map((s) => Number(s.getAttribute("stop-opacity")))).toEqual([
+			0.8, 1,
+		]);
 
 		// a1 is the bottom-left square, so the arrow runs up the x=50 column from
-		// y=750 to y=50. It is rooted at the origin centre rather than backed off
-		// it -- the piece hides the tail, because the marks layer paints under the
-		// pieces -- so the tail vertices sit exactly on y=750.
-		const ys = arrow
-			.getAttribute("points")!
-			.split(" ")
-			.map((p) => Number(p.split(",")[1]));
-		expect(Math.max(...ys)).toBeCloseTo(750, 5);
-		expect(Math.min(...ys)).toBeCloseTo(50, 5);
+		// y=750 to y=50. The shaft is rooted at the origin centre rather than
+		// backed off it -- the piece hides the tail -- and the head's tip reaches
+		// the destination centre.
+		const shaftYs = ysOf(shaft);
+		const headYs = ysOf(head);
+		expect(Math.max(...shaftYs)).toBeCloseTo(750, 5);
+		expect(Math.min(...headYs)).toBeCloseTo(50, 5);
+
+		// The split is at the destination square's boundary, not at the neck: a
+		// head alone on top leaves the shaft under it for the piece's base to
+		// swallow, so the whole of the arrow inside a8 (y <= 100) is up there.
+		expect(Math.max(...headYs)).toBeCloseTo(100, 5);
+
+		// They must overlap slightly, never merely touch: two shapes sharing an
+		// edge exactly antialias into a visible hairline seam.
+		expect(Math.min(...shaftYs)).toBeLessThan(Math.max(...headYs));
+
+		board.unmount();
+	});
+
+	it("rebuilds the arrows' fade gradients each render instead of piling them up", () => {
+		// Every repaint mints a fresh gradient id, so <defs> is a leak unless the
+		// clear empties it -- and it cannot simply be dropped, since the marks
+		// layer's own shafts reference what is inside it.
+		const board = createBoard(container, {
+			animate: { enabled: false },
+			marks: { user: [{ from: "a1", to: "a8" }] },
+		});
+
+		const gradients = () => container.querySelectorAll(".qd-marks defs linearGradient").length;
+		expect(gradients()).toBe(1);
+
+		board.setUserMarks([{ from: "a1", to: "a8" }]);
+		board.setUserMarks([{ from: "a1", to: "a8" }]);
+		expect(gradients()).toBe(1);
+
+		// The reference has to survive the churn, or the shaft paints as black.
+		const shaft = container.querySelector('.qd-marks [data-mark="arrow"]')!;
+		const id = shaft.getAttribute("fill")!.match(/^url\(#(.+)\)$/)![1];
+		expect(container.querySelector(`.qd-marks defs #${id}`)).not.toBeNull();
 
 		board.unmount();
 	});

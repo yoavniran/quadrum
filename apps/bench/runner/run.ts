@@ -219,7 +219,7 @@ async function main() {
 			caveats: [
 				`CPU throttle rate: ${opts.throttle}`,
 				"Headless has no real vsync; frame-derived metrics are advisory",
-				"Synthetic game data: legal chess moves are not required; what matters for a renderer is DOM churn per update",
+				"Position-replay workload: three real games spliced to 200 half-moves (see apps/bench/src/data/game.ts)",
 			],
 		};
 

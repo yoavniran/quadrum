@@ -15,6 +15,9 @@ export async function launch(headed: boolean): Promise<Browser> {
 			"--disable-background-timer-throttling",
 			"--disable-renderer-backgrounding",
 			"--disable-backgrounding-occluded-windows",
+			// Headless has no real vsync; this forces every compositor stage to complete
+			// per frame so paint-adjacent numbers are less understated
+			"--run-all-compositor-stages-before-draw",
 		],
 	});
 }

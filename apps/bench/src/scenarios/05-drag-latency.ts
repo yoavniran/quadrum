@@ -19,6 +19,11 @@ import type {
 /** Input event types either library might act on. */
 const INPUT_EVENTS = ["pointerdown", "mousedown", "pointermove", "mousemove"] as const;
 
+/** Number of waypoints in a drag gesture. */
+const DRAG_STEPS = 12;
+/** Milliseconds between each waypoint: 8 ms ≈ 125 Hz report rate of a standard mouse. */
+const DRAG_STEP_MS = 8;
+
 /**
  * Time, per input event, from the event arriving in the page to the end of the
  * task that processed it.
@@ -65,7 +70,7 @@ export const dragLatencyScenario: Scenario = {
 	expectation:
 		"Expected to favour chessground if anything — its pointer path is battle-hardened by lichess. Included deliberately as a scenario quadrum can lose.",
 	parity:
-		"Both mounted interactive with dragging enabled. The identical gesture — press on e2, three moves to e4, release — is driven by the runner as real browser input at the same viewport coordinates, so neither library is asked to respond to an event family it does not listen to. Timing covers the page-side handling of each input event only; the runner round-trip is excluded by starting the clock inside the page.",
+		"Both mounted interactive with dragging enabled. The identical gesture — press on e2, drag to e4 with 12 waypoints paced at 8 ms each (125 Hz mouse rate), release — is driven by the runner as real browser input at the same viewport coordinates, so neither library is asked to respond to an event family it does not listen to. Timing covers the page-side handling of each input event only; the runner round-trip is excluded by starting the clock inside the page.",
 	endCondition:
 		"The library has entered its drag state and written a transform on the dragged piece, and the gesture has been released.",
 	runnerOnly: true,
@@ -110,12 +115,14 @@ export const dragLatencyScenario: Scenario = {
 				await mouse("move", from.x, from.y);
 				await mouse("down", from.x, from.y);
 
-				for (const fraction of [0.33, 0.66, 1]) {
+				for (let step = 1; step <= DRAG_STEPS; step++) {
+					const fraction = step / DRAG_STEPS;
 					await mouse(
 						"move",
 						from.x + (to.x - from.x) * fraction,
 						from.y + (to.y - from.y) * fraction,
 					);
+					await new Promise((resolve) => setTimeout(resolve, DRAG_STEP_MS));
 				}
 
 				// Observed while the gesture is still held; the release below ends it.

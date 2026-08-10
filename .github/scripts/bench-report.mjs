@@ -640,11 +640,14 @@ export function escapeCell(text) {
 }
 
 /**
+ * Format a ratio as a symmetric string with labels on both sides.
+ * Ratio is normalised so lower means quadrum better.
+ *
  * @param {number} ratio
  * @param {boolean} tie
  * @returns {string}
  */
-function formatRatio(ratio, tie) {
+export function formatRatio(ratio, tie) {
 	if (!Number.isFinite(ratio)) {
 		return "—";
 	}
@@ -655,7 +658,9 @@ function formatRatio(ratio, tie) {
 		return `${text} — parity`;
 	}
 
-	return ratio < 1 ? `**${text}**` : `${text} — **chessground wins**`;
+	return ratio < 1
+		? `**${text} — quadrum wins** ✅`
+		: `${text} — **chessground wins**`;
 }
 
 /**

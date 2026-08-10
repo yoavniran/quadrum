@@ -11,6 +11,7 @@ import {
 	formatValue,
 	escapeCell,
 	guardBaselineChange,
+	formatRatio,
 	SCHEMA_VERSION,
 } from "./bench-report.mjs";
 import { percentile, median, medianCi, describe as describeSamples } from "./bench-stats.mjs";
@@ -536,6 +537,60 @@ describe("makeBaseline", () => {
 	});
 });
 
+describe("formatRatio", () => {
+	it("returns — when ratio is not finite", () => {
+		expect(formatRatio(NaN, false)).toBe("—");
+		expect(formatRatio(Infinity, false)).toBe("—");
+		expect(formatRatio(-Infinity, false)).toBe("—");
+	});
+
+	it("returns formatted text with parity when tie is true", () => {
+		const result = formatRatio(0.95, true);
+		expect(result).toBe("0.95× — parity");
+	});
+
+	it("returns quadrum wins label and checkmark when ratio < 1", () => {
+		const result = formatRatio(0.58, false);
+		expect(result).toBe("**0.58× — quadrum wins** ✅");
+	});
+
+	it("returns chessground wins label when ratio >= 1", () => {
+		const result = formatRatio(1.2, false);
+		expect(result).toBe("1.20× — **chessground wins**");
+	});
+
+	it("covers all four branches in renderHeadlineTable output", () => {
+		// Test that all four branches are rendered through the table
+		const quadrumWins = scenario({
+			title: "Test 1",
+			metrics: [metric({ quadrum: { median: 0.58, ci95: [0.5, 0.66] }, chessground: { median: 1, ci95: [0.9, 1.1] } })],
+		});
+
+		const chessgroundWins = scenario({
+			title: "Test 2",
+			gated: false,
+			metrics: [metric({ quadrum: { median: 1.2, ci95: [1.15, 1.25] }, chessground: { median: 1, ci95: [0.95, 1.05] } })],
+		});
+
+		const tied = scenario({
+			title: "Test 3",
+			metrics: [metric({ quadrum: { median: 0.95, ci95: [0.8, 1.1] }, chessground: { median: 1, ci95: [0.8, 1.1] } })],
+		});
+
+		const table = renderHeadlineTable(summary([quadrumWins, chessgroundWins, tied]));
+
+		// Verify quadrum wins row contains the label and checkmark
+		expect(table).toContain("quadrum wins");
+		expect(table).toContain("✅");
+
+		// Verify chessground wins row still works
+		expect(table).toContain("chessground wins");
+
+		// Verify parity row
+		expect(table).toContain("parity");
+	});
+});
+
 describe("renderHeadlineTable", () => {
 	const winner = scenario({
 		metrics: [metric({ quadrum: { median: 4, ci95: [3.9, 4.1] }, chessground: { median: 10, ci95: [9.8, 10.2] } })],
@@ -564,6 +619,9 @@ describe("renderHeadlineTable", () => {
 		expect(table).toContain("Mount a full board");
 		expect(table).toContain("Drag latency, p95");
 		expect(table).toContain("chessground wins");
+		// Check that quadrum wins are labelled symmetrically
+		expect(table).toContain("quadrum wins");
+		expect(table).toContain("✅");
 	});
 
 	it("renders an overlapping interval as parity, never as a win", () => {
@@ -574,7 +632,8 @@ describe("renderHeadlineTable", () => {
 		const table = renderHeadlineTable(summary([tied]));
 
 		expect(table).toContain("parity");
-		expect(table).not.toContain("**0.94×**");
+		expect(table).not.toContain("quadrum wins");
+		expect(table).not.toContain("chessground wins");
 	});
 
 	it("takes its date from the run, not from the clock", () => {

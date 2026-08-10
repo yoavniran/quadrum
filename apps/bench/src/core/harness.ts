@@ -11,6 +11,7 @@ import type {
 	ScenarioComparison,
 	ScenarioRunResult,
 	AdapterId,
+	Assertion,
 	Metric,
 	ScenarioContext,
 	BenchHooks,
@@ -81,12 +82,86 @@ export function metricFromSamples(
 		value,
 		samples: Array.from(kept),
 		discarded: Array.from(discarded),
+		statistic: opts.statistic,
+	};
+}
+
+/**
+ * Merge multiple passes of the same scenario into a single result.
+ * Used to pool ABBA-order passes: concatenate samples and discarded across passes,
+ * recompute the metric value with the original statistic, and concatenate assertions.
+ */
+export function mergePassResults(
+	passes: readonly ScenarioRunResult[],
+): ScenarioRunResult {
+	if (passes.length === 0) {
+		throw new Error("mergePassResults: empty array");
+	}
+
+	if (passes.length === 1) {
+		return passes[0];
+	}
+
+	const firstPass = passes[0];
+	const mergedMetrics: Metric[] = [];
+
+	// Preserve the key order from the first pass
+	for (const firstMetric of firstPass.metrics) {
+		const key = firstMetric.key;
+
+		// Collect this metric from all passes
+		const metricsWithKey = passes
+			.map((pass) => pass.metrics.find((m) => m.key === key))
+			.filter((m) => m !== undefined) as Metric[];
+
+		// Check if all passes have this metric with samples and statistic
+		const allHaveSamples = metricsWithKey.every(
+			(m) => m.samples && m.statistic,
+		);
+
+		if (allHaveSamples) {
+			// Pool the samples and recompute the value
+			const pooledSamples = metricsWithKey.flatMap((m) => m.samples ?? []);
+			const pooledDiscarded = metricsWithKey.flatMap((m) => m.discarded ?? []);
+			const statistic = metricsWithKey[0].statistic!;
+			const stats = summarize(pooledSamples);
+			const value =
+				statistic === "median" ? stats.median : stats.p95;
+
+			mergedMetrics.push({
+				key: firstMetric.key,
+				label: firstMetric.label,
+				unit: firstMetric.unit,
+				direction: firstMetric.direction,
+				value,
+				samples: pooledSamples,
+				discarded: pooledDiscarded,
+				statistic,
+				advisory: firstMetric.advisory,
+			});
+		} else {
+			// Use the last pass's metric unchanged
+			const lastMetricWithKey = metricsWithKey[metricsWithKey.length - 1];
+			mergedMetrics.push(lastMetricWithKey);
+		}
+	}
+
+	// Concatenate assertions from all passes
+	const mergedAssertions: Assertion[] = [];
+	for (const pass of passes) {
+		mergedAssertions.push(...pass.assertions);
+	}
+
+	return {
+		adapter: firstPass.adapter,
+		metrics: mergedMetrics,
+		assertions: mergedAssertions,
 	};
 }
 
 /**
  * Run a scenario comparison between both adapters.
- * Interleaves with ABBA, handles warmup and discard.
+ * Interleaves with ABBA, handles warmup and discard, and pools ABBA passes.
  */
 export async function runComparison(args: {
 	scenario: Scenario;
@@ -99,7 +174,9 @@ export async function runComparison(args: {
 	const { scenario, container, options, hooks, signal, log } = args;
 
 	const startTime = performance.now();
-	const results: Map<AdapterId, ScenarioRunResult> = new Map();
+	const passes: Map<AdapterId, ScenarioRunResult[]> = new Map();
+	passes.set("quadrum", []);
+	passes.set("chessground", []);
 
 	// Run one warmup pass per adapter (discarded entirely)
 	for (const id of DEFAULT_ORDER) {
@@ -128,7 +205,7 @@ export async function runComparison(args: {
 		await settle();
 	}
 
-	// Run the actual passes with ABBA interleaving
+	// Run the actual passes with ABBA interleaving, collecting all passes per adapter
 	const order = abbaOrder(1, DEFAULT_ORDER);
 	for (const id of order) {
 		if (signal.aborted) {
@@ -147,7 +224,7 @@ export async function runComparison(args: {
 
 		try {
 			const result = await scenario.run(ctx);
-			results.set(id, result);
+			passes.get(id)!.push(result);
 			log(`pass ${id}`);
 		} finally {
 			host.remove();
@@ -157,7 +234,15 @@ export async function runComparison(args: {
 		await settle();
 	}
 
-	// Merge results: build ratios and check validity
+	// Merge passes per adapter and build ratios
+	const results: Map<AdapterId, ScenarioRunResult> = new Map();
+	for (const [id, adapterPasses] of passes) {
+		if (adapterPasses.length > 0) {
+			results.set(id, mergePassResults(adapterPasses));
+		}
+	}
+
+	// Build ratios and check validity
 	const ratios: Record<string, number> = {};
 	const quadrumResult = results.get("quadrum");
 	const chessgroundResult = results.get("chessground");

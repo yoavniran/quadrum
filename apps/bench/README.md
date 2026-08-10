@@ -80,6 +80,10 @@ This is the single easiest way to publish a wrong number, so it is structurally 
 than merely discouraged: the page API refuses to run under `import.meta.env.DEV` unless
 `--allow-dev` is passed, and the mode is recorded in the JSON.
 
+### Position-replay workload
+
+Scenarios 1–4 and 6 replay 200 half-moves from three real classical games: Kasparov–Topalov 1999 (87 moves), Kasparov–Morozevich 2001 (86 moves, including promotions and castling), and the first 27 moves of Karpov–Kasparov 1990. Real games provide realistic piece displacements, capture cadence, and special moves — far better than a synthetic seeded generator that produced teleporting pieces and no castling or promotion in the workload. `apps/bench/scripts/generate-game-data.mjs` regenerates the position set from `source-games.pgn` when needed.
+
 ### Piece-art parity
 
 quadrum ships structural CSS only; the demo app paints pieces as Unicode glyphs sized in `cqw`.
@@ -116,10 +120,22 @@ bundle-size question — answered in scenario 8, with two CSS rows.
   deltas taken during warmup, never a hardcoded 16.67. `updatesCompleted` ships too: a library that
   falls behind and forces the harness to skip positions must not score as "zero dropped frames".
   Under headless there is no real vsync, so these carry `advisory` and are never gated.
+  The launch flag `--run-all-compositor-stages-before-draw` forces every compositor stage to
+  complete per frame so paint-adjacent numbers are less understated.
 - **CPU throttled 4× via CDP**, recorded in the JSON. Unthrottled, both libraries finish a
   200-position replay inside timer noise and the difference that matters on a mid-range Android
   disappears. Runs at different throttle rates are never merged — the gate throws rather than
   compare them.
+- **Drag latency (scenario 5) is paced at 8 ms per waypoint** — the 125 Hz report rate of a
+  standard mouse — rather than dispatched as fast as the CDP channel allows. Real pointing device
+  input rates are far slower than synchronous CDP roundtrips, and the pacing produces more
+  representative measurements.
+
+### Future work
+
+CDP `Tracing` -based paint attribution (`Tracing.start` with the rendering categories) would give
+real per-frame paint numbers in place of the advisory rAF-derived ones; deliberately not done yet
+because it adds a second measurement pipeline whose overhead itself needs validating.
 
 ### Memory
 

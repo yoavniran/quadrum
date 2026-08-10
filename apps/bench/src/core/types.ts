@@ -126,6 +126,8 @@ export interface Metric {
 	readonly samples?: readonly number[];
 	/** Iterations dropped as warmup, retained so the drop stays auditable. */
 	readonly discarded?: readonly number[];
+	/** Which statistic `value` was computed with, so pooled passes can be recomputed the same way. */
+	readonly statistic?: "median" | "p95";
 	/** Set when the number is advisory rather than a hard measurement. */
 	readonly advisory?: string;
 }

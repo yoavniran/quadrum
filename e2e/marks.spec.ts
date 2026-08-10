@@ -92,4 +92,29 @@ test.describe("arrows and circles", () => {
 		await board.clickSquare("f3");
 		await expect(board.circle("d5")).toBeVisible();
 	});
+
+	test("a hand-drawn arrow layers over an automatic one on the same squares", async ({
+		board,
+	}) => {
+		// Premove mode is the demo's source of automatic marks: every queued
+		// premove is handed back to the board as a blue auto arrow. Drawing over
+		// the move something else is proposing is the common case, and used to
+		// make the user's arrow vanish the instant it was released.
+		await board.setMode("Premove");
+		await board.drag("e2", "e4");
+		await expect(board.arrow("e2", "e4")).toHaveCount(1);
+
+		await board.drawArrow("e2", "e4");
+
+		// Both survive, the automatic one painted first so the user's lands on top.
+		await expect(board.arrow("e2", "e4")).toHaveCount(2);
+		await expect(board.arrow("e2", "e4").nth(0)).toHaveAttribute("data-pen", "blue");
+		await expect(board.arrow("e2", "e4").nth(1)).toHaveAttribute("data-pen", "green");
+		await expect(board.readout("marks")).toHaveText("e2e4:green");
+
+		// Clearing takes the user's marks and leaves the automatic one behind.
+		await board.press("Clear all marks");
+		await expect(board.arrow("e2", "e4")).toHaveCount(1);
+		await expect(board.arrow("e2", "e4")).toHaveAttribute("data-pen", "blue");
+	});
 });

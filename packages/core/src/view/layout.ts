@@ -4,6 +4,11 @@ export interface BoardDom {
 	wrap: HTMLElement;
 	board: HTMLElement;
 	marks: SVGSVGElement;
+	/** The over-the-pieces half of the marks layer -- arrowheads only. An arrow
+	 *  straddles the piece layer: its tail hides behind the piece it starts from
+	 *  while its head lands on top of the piece it points at, and one SVG cannot
+	 *  be on both sides of the pieces at once. */
+	heads: SVGSVGElement;
 	badges: SVGSVGElement;
 	ranks: HTMLElement;
 	files: HTMLElement;
@@ -20,6 +25,10 @@ export function buildDom(container: HTMLElement): BoardDom {
 	marks.setAttribute("viewBox", "0 0 800 800");
 	marks.appendChild(document.createElementNS("http://www.w3.org/2000/svg", "defs"));
 
+	const heads = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	heads.setAttribute("class", "qd-heads");
+	heads.setAttribute("viewBox", "0 0 800 800");
+
 	const badges = document.createElementNS("http://www.w3.org/2000/svg", "svg");
 	badges.setAttribute("class", "qd-badges");
 	badges.setAttribute("viewBox", "0 0 800 800");
@@ -34,12 +43,13 @@ export function buildDom(container: HTMLElement): BoardDom {
 
 	container.appendChild(board);
 	container.appendChild(marks);
+	container.appendChild(heads);
 	container.appendChild(badges);
 	container.appendChild(ranks);
 	container.appendChild(files);
 	container.appendChild(overlay);
 
-	return { wrap: container, board, marks, badges, ranks, files, overlay };
+	return { wrap: container, board, marks, heads, badges, ranks, files, overlay };
 }
 
 export function renderCoords(dom: BoardDom, state: BoardState): void {

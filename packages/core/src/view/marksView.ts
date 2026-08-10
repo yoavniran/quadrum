@@ -55,14 +55,26 @@ function clearLayers(dom: BoardDom): void {
  * -- a bare <line>/<circle> among others -- which leaves application CSS and
  * tests with nothing to select on. `data-mark` is the shape, `data-from`/`data-to`
  * the squares, `data-pen` the pen key.
+ *
+ * Exactly one element per mark carries `data-mark`, so `[data-mark]` counts
+ * marks and not shapes. An arrow is drawn as two polygons that straddle the
+ * piece layer, and the second one is a *part* of that one mark: it takes
+ * `data-mark-part` instead, and is found with `[data-mark-part="head"]`. Styling
+ * a whole arrow therefore means selecting both.
  */
 function describeMark(
 	el: SVGElement,
-	kind: "arrow" | "arrowhead" | "circle" | "badge",
+	kind: "arrow" | "circle" | "badge" | null,
 	mark: Mark,
 	penKey: string,
+	part?: "shaft" | "head",
 ): void {
-	el.setAttribute("data-mark", kind);
+	if (kind) {
+		el.setAttribute("data-mark", kind);
+	}
+	if (part) {
+		el.setAttribute("data-mark-part", part);
+	}
 	el.setAttribute("data-from", mark.from);
 	if (mark.to) {
 		el.setAttribute("data-to", mark.to);
@@ -229,7 +241,7 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 
 			const paint = (
 				pts: number[][],
-				kind: "arrow" | "arrowhead",
+				part: "shaft" | "head",
 				layer: SVGSVGElement,
 				fill: string,
 				opacity: number | null,
@@ -244,7 +256,8 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 					polygon.setAttribute("opacity", String(opacity));
 				}
 				polygon.setAttribute("stroke-linejoin", "round");
-				describeMark(polygon, kind, mark, penKey);
+				// The shaft is the mark; the head only ever a part of it.
+				describeMark(polygon, part === "shaft" ? "arrow" : null, mark, penKey, part);
 				layer.appendChild(polygon);
 			};
 
@@ -264,8 +277,8 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 							y2: overY,
 						})
 					: null;
-			paint(shaft, "arrow", dom.marks, fade ?? pen.color, fade ? null : pen.opacity);
-			paint(head, "arrowhead", dom.heads, pen.color, 1);
+			paint(shaft, "shaft", dom.marks, fade ?? pen.color, fade ? null : pen.opacity);
+			paint(head, "head", dom.heads, pen.color, 1);
 		} else {
 			// Circle
 			const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");

@@ -68,6 +68,7 @@ qd-piece.appearing {
 
 /* Mark layers */
 .qd-marks,
+.qd-heads,
 .qd-badges {
 	position: absolute;
 	inset: 0;
@@ -78,12 +79,21 @@ qd-piece.appearing {
 
 /* qd-board creates no stacking context, so the piece layer's z-index competes
    with these siblings directly and the order here is the whole paint order.
-   Marks go BELOW the pieces: an arrow is drawn from the centre of its origin
-   square and the piece standing there is what hides the tail, so the arrow
-   reads as emerging from behind the piece. Badges (move-quality glyphs and the
-   like) annotate the pieces, so they stay on top. */
+   An arrow deliberately straddles the pieces, split by square rather than at the
+   neck. Everything up to the destination square is in .qd-marks, BELOW them:
+   drawn from the centre of its origin square, the piece standing there is what
+   hides the tail, so the arrow reads as emerging from behind the piece. The part
+   inside the destination square -- head AND the shaft leading into it -- is in
+   .qd-heads, ABOVE them, so the arrow lands on the piece it points at instead of
+   having its head cut off from its shaft by that piece's base. Badges
+   (move-quality glyphs and the like) annotate the pieces, so they stay on top of
+   everything. */
 .qd-marks {
 	z-index: 2;
+}
+
+.qd-heads {
+	z-index: 4;
 }
 
 .qd-badges {

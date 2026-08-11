@@ -133,7 +133,7 @@ export function seededRandom(seed) {
 }
 
 /**
- * Percentile bootstrap 95% confidence interval for the median.
+ * Percentile bootstrap 95% confidence interval for any statistic.
  *
  * Bootstrapped rather than computed from normal theory because these samples
  * are right-skewed with a hard floor at zero, so a mean +/- 1.96 sigma interval
@@ -141,12 +141,13 @@ export function seededRandom(seed) {
  * tail that actually matters.
  *
  * @param {readonly number[]} xs
+ * @param {(values: number[]) => number} estimator function that computes the statistic
  * @param {{ resamples?: number, seed?: number }} [options]
  * @returns {[number, number]} [lo, hi]; [NaN, NaN] when there is nothing to
  * resample, and [x, x] for a single sample -- a degenerate interval, which is
  * honest, rather than a fabricated width.
  */
-export function medianCi(xs, options = {}) {
+export function statisticCi(xs, estimator, options = {}) {
 	const values = clean(xs);
 	const resamples = options.resamples ?? 2000;
 	const seed = options.seed ?? 0x5eed;
@@ -160,7 +161,7 @@ export function medianCi(xs, options = {}) {
 	}
 
 	const random = seededRandom(seed);
-	const medians = new Array(resamples);
+	const estimates = new Array(resamples);
 
 	for (let i = 0; i < resamples; i++) {
 		const draw = new Array(values.length);
@@ -169,10 +170,36 @@ export function medianCi(xs, options = {}) {
 			draw[j] = values[Math.floor(random() * values.length)];
 		}
 
-		medians[i] = median(draw);
+		estimates[i] = estimator(draw);
 	}
 
-	return [percentile(medians, 0.025), percentile(medians, 0.975)];
+	return [percentile(estimates, 0.025), percentile(estimates, 0.975)];
+}
+
+/**
+ * Percentile bootstrap 95% confidence interval for the median.
+ *
+ * @param {readonly number[]} xs
+ * @param {{ resamples?: number, seed?: number }} [options]
+ * @returns {[number, number]} [lo, hi]; [NaN, NaN] when there is nothing to
+ * resample, and [x, x] for a single sample -- a degenerate interval, which is
+ * honest, rather than a fabricated width.
+ */
+export function medianCi(xs, options = {}) {
+	return statisticCi(xs, median, options);
+}
+
+/**
+ * Percentile bootstrap 95% confidence interval for the p95.
+ *
+ * @param {readonly number[]} xs
+ * @param {{ resamples?: number, seed?: number }} [options]
+ * @returns {[number, number]} [lo, hi]; [NaN, NaN] when there is nothing to
+ * resample, and [x, x] for a single sample -- a degenerate interval, which is
+ * honest, rather than a fabricated width.
+ */
+export function p95Ci(xs, options = {}) {
+	return statisticCi(xs, (values) => percentile(values, 0.95), options);
 }
 
 /**
@@ -186,7 +213,7 @@ export function medianCi(xs, options = {}) {
  * @param {{ seed?: number }} [options]
  * @returns {{ n: number, min: number, median: number, mean: number, p95: number,
  *   max: number, stddev: number, mad: number, ci95: [number, number],
- *   raw: number[] }}
+ *   p95Ci95: [number, number], raw: number[] }}
  */
 export function describe(xs, options = {}) {
 	const values = clean(xs);
@@ -201,6 +228,7 @@ export function describe(xs, options = {}) {
 		stddev: stddev(values),
 		mad: mad(values),
 		ci95: medianCi(values, options),
+		p95Ci95: p95Ci(values, options),
 		raw: values,
 	};
 }

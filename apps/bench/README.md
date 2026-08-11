@@ -46,22 +46,20 @@ committed to this MIT repository.
 | # | Scenario | Headline metric | Gated | Expected to favour |
 | --- | --- | --- | --- | --- |
 | 1 | Mount a full board | `mount-layout-ms` | ✅ | quadrum, slightly |
-| 2 | 100 position updates, animation off | `update-layout-ms` | ✅ | quadrum |
+| 2 | 100 position updates, animation off | `update-total-script-ms` | ✅ | quadrum |
 | 3 | 100 position updates, animation on | `frame-interval-p95` | — | neither; parity expected |
-| 4 | Engine arrow re-draw, per tick | `arrow-tick-script-ms` | ✅ | quadrum |
+| 4 | Engine arrow re-draw, per tick | `arrow-tick-total-script-ms` | ✅ | quadrum |
 | 5 | Drag latency, p95 | `drag-latency-p95-ms` | — | **chessground** |
 | 6 | Resize storm, 50 resizes | `resize-layout-ms` | — | quadrum, by construction |
 | 7 | Retention after teardown | `retained-nodes` | ✅ (as `=== 0`) | neither; parity expected |
 | 8 | Bundle size, min+brotli | `bundle-brotli-bytes` | ✅ (absolute, +2%) | quadrum |
 
-Scenario 4 headlines **script** rather than layout, unlike 1, 2 and 6. Replacing the arrow layer
-mutates SVG children inside a fixed viewBox, so most ticks force no real layout and the layout
-metric largely measures whether the browser happened to do any — quadrum's layout median came back
-at 0.21 ms against a p95 of 0.93 ms, with a bootstrap CI spanning 28% of the median, well past the
-8% a gated metric may carry. The script metric over those same samples sits inside 2%. Note the
-direction: the layout ratio was 3.50× and the script ratio is 12.75×, so this makes the published
-headline *worse* for quadrum, which is why it is a defensible choice rather than a convenient one.
-Both rows still ship in the full table.
+Scenario 4 headlines **total elapsed time over the whole loop** rather than per-iteration metrics.
+Per-iteration medians sit 3–9 ticks above the 5µs timer floor (chessground at 0.045 ms / 9 ticks),
+so the ratio is `real ÷ quantized`, swinging 9.58× → 16.00× between two identical runs against a
+15% gate tolerance. Summing 100 quantized samples cuts the relative quantization error by √100,
+keeping both subjects well clear of the floor. That makes the ratio trustworthy. Scenario 2 uses
+the same approach. Both headline the total; per-iteration metrics still ship in the full table.
 
 Every scenario declares its own `expectation`, `parity` and `endCondition` in
 `src/scenarios/*.ts`, and those three sentences travel with the numbers into the results JSON and
@@ -147,6 +145,13 @@ bundle-size question — answered in scenario 8, with two CSS rows.
   The headers are set in `vite.config.ts` for both dev and preview; `env.crossOriginIsolated`
   in the results JSON says which floor a run was measured against, and the runner both warns on
   the console and appends a caveat to the JSON when a run was not isolated.
+- **Headline metrics stay clear of the timer floor.** Scenarios 2 and 4 headline *total elapsed time*
+  rather than per-iteration medians, because per-iteration medians sit 3–9 ticks above the 5µs floor
+  (chessground's update-layout at 0.015 ms = 3 ticks). A one-tick movement in a 3-tick denominator
+  is a 33% swing, making the per-iteration ratio `real ÷ quantized` and non-reproducible between
+  runs. Summing 100 quantized samples cuts the relative error by √100, keeping both subjects well
+  clear of the floor and making the headline ratio trustworthy. One tick of movement in a 20-tick
+  sample is 5% — inside the gate's 15% tolerance with room to spare.
 - **Per-scenario repetition caps.** A scenario may declare `repsCap`, the maximum number of
   process repetitions worth spending on it; the runner skips it in later repetitions of a broad
   (`all`/`gated`) sweep. An explicitly requested single scenario is exempt. Today only

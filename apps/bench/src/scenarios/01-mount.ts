@@ -24,6 +24,9 @@ export const mountScenario: Scenario = {
 		"Both mounted with identical size, orientation, coordinates off, animation off, interactivity off, from the same FEN placement.",
 	endCondition:
 		"The board element has been laid out and all 32 piece boxes have non-zero geometry.",
+	// Headlines on per-iteration metrics here rather than totals. Medians are 1.6 ms and
+	// 1.05 ms — hundreds of ticks clear of the 5µs timer floor — so the ratio is
+	// already trustworthy. Do not "fix" this one to total-time metrics.
 	headlineMetric: "mount-layout-ms",
 	defaults: { sizePx: 480, iterations: 25, warmupIterations: 2, discardFirst: 5 },
 

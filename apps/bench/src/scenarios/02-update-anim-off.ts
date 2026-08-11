@@ -3,7 +3,7 @@
  */
 
 import { forceLayout, observeLongTasks } from "../core/clock";
-import { metricFromSamples } from "../core/harness";
+import { metricFromSamples, applyDiscard } from "../core/harness";
 import { GAME_POSITIONS } from "../data/game";
 import { INITIAL_PLACEMENT } from "quadrum";
 import type {
@@ -24,7 +24,7 @@ export const updateAnimOffScenario: Scenario = {
 		"Animation disabled on both. Every update carries placement, lastMove and side-to-move, exactly as a real app does. Each update is flushed to the DOM inside the timed region, because chessground defers its render to a requestAnimationFrame while quadrum renders synchronously — without the flush chessground would be timed doing nothing and would collapse 100 updates into a single render.",
 	endCondition:
 		"Every position has been applied AND rendered into the DOM, and the board has been laid out; piece count matches the final placement.",
-	headlineMetric: "update-layout-ms",
+	headlineMetric: "update-total-script-ms",
 	defaults: { sizePx: 480, iterations: 100, warmupIterations: 1, discardFirst: 10 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {
@@ -94,6 +94,14 @@ export const updateAnimOffScenario: Scenario = {
 				},
 			];
 
+			// Sum the kept samples to get total elapsed time over the whole loop.
+			// Use the same discardFirst semantics as the per-iteration metrics, so
+			// the total covers exactly the samples the other metrics report on.
+			const { kept: keptScript } = applyDiscard(scriptSamples, options.discardFirst);
+			const { kept: keptLayout } = applyDiscard(layoutSamples, options.discardFirst);
+			const totalScriptMs = keptScript.reduce((sum, x) => sum + x, 0);
+			const totalLayoutMs = keptLayout.reduce((sum, x) => sum + x, 0);
+
 			const metrics: Metric[] = [
 				metricFromSamples("update-layout-ms", "Layout", layoutSamples, {
 					unit: "ms",
@@ -107,6 +115,20 @@ export const updateAnimOffScenario: Scenario = {
 					statistic: "median",
 					discardFirst: options.discardFirst,
 				}),
+				{
+					key: "update-total-script-ms",
+					label: "Total script",
+					unit: "ms",
+					direction: "lower",
+					value: totalScriptMs,
+				},
+				{
+					key: "update-total-layout-ms",
+					label: "Total layout",
+					unit: "ms",
+					direction: "lower",
+					value: totalLayoutMs,
+				},
 				{
 					key: "update-longtask-ms",
 					label: "Long tasks",

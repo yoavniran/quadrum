@@ -8,10 +8,11 @@ import { capScenarioIds } from "../runner/report.ts";
 const META = [
 	{ id: "mount", repsCap: null },
 	{ id: "update-throughput-anim-off" },
+	{ id: "update-throughput-anim-on", repsCap: 3 },
 	{ id: "memory-leak", repsCap: 5 },
 ];
 
-const IDS = ["mount", "update-throughput-anim-off", "memory-leak"];
+const IDS = ["mount", "update-throughput-anim-off", "update-throughput-anim-on", "memory-leak"];
 
 describe("capScenarioIds", () => {
 	it("keeps every scenario while all caps are unmet", () => {
@@ -27,6 +28,11 @@ describe("capScenarioIds", () => {
 			"mount",
 			"update-throughput-anim-off",
 		]);
+	});
+
+	it("runs update-throughput-anim-on in repetitions 0–2 and excludes it from repetition 3+", () => {
+		expect(capScenarioIds(IDS, META, 2)).toContain("update-throughput-anim-on");
+		expect(capScenarioIds(IDS, META, 3)).not.toContain("update-throughput-anim-on");
 	});
 
 	it("never drops scenarios with a null or missing cap, however many repetitions run", () => {

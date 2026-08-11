@@ -14,12 +14,18 @@
  * statement of interest.
  */
 
-import { describe as describeSamples, medianCi } from "./bench-stats.mjs";
+import { describe as describeSamples, medianCi, p95Ci } from "./bench-stats.mjs";
 
-export { medianCi };
+export { medianCi, p95Ci };
 
 /** The only results schema this file understands. */
 export const SCHEMA_VERSION = 1;
+
+/**
+ * Cross-origin-isolated performance.now() resolution. Values measured below this
+ * were not measured so much as not resolved, and should render as such.
+ */
+export const TIMER_RESOLUTION_MS = 0.005;
 
 /** Ratio tolerance over baseline before a gated scenario is a regression. */
 export const DEFAULT_TOLERANCE = 0.15;
@@ -35,6 +41,14 @@ export const DEFAULT_SANITY_DRIFT_FACTOR = 2.5;
 
 /** A gated scenario's CI half-width may not exceed this fraction of its median. */
 export const MAX_GATED_CI_HALF_WIDTH = 0.08;
+
+/**
+ * Minimum number of timer ticks for a gated metric's central value. 20 ticks (0.1 ms)
+ * is the point at which one tick of movement is a 5% ratio swing, which sits inside the
+ * 15% gate tolerance with room to spare. Metrics below this are quantized and
+ * non-reproducible between runs.
+ */
+export const MIN_GATED_MEDIAN_TICKS = 20;
 
 const HEADLINE_START = "<!-- bench:headline:start -->";
 const HEADLINE_END = "<!-- bench:headline:end -->";
@@ -102,19 +116,24 @@ function exceeds(value, threshold) {
  * comparison somewhere, and an inverted comparison somewhere is where a
  * regression hides.
  *
- * @param {{ median: number, ci95: [number, number] }} quadrum
- * @param {{ median: number, ci95: [number, number] }} chessground
+ * @param {{ median: number, p95: number, ci95: [number, number], p95Ci95: [number, number] }} quadrum
+ * @param {{ median: number, p95: number, ci95: [number, number], p95Ci95: [number, number] }} chessground
  * @param {"lower" | "higher"} direction
+ * @param {"median" | "p95"} statistic
  * @returns {{ ratio: number, ratioCi95: [number, number], verdict: "quadrum" | "chessground" | "parity", tie: boolean }}
  */
-export function compareSubjects(quadrum, chessground, direction = "lower") {
+export function compareSubjects(quadrum, chessground, direction = "lower", statistic = "median") {
 	const higher = direction === "higher";
-	const ratio = higher
-		? safeRatio(chessground.median, quadrum.median)
-		: safeRatio(quadrum.median, chessground.median);
 
-	const [qLo, qHi] = quadrum.ci95 ?? [NaN, NaN];
-	const [cLo, cHi] = chessground.ci95 ?? [NaN, NaN];
+	// Select the point estimate and interval based on the declared statistic.
+	// The current behaviour flatters quadrum by using median for p95-headlined
+	// metrics -- that is exactly why we are fixing this now, before it stops doing so.
+	const qValue = statistic === "p95" ? quadrum.p95 : quadrum.median;
+	const cValue = statistic === "p95" ? chessground.p95 : chessground.median;
+	const [qLo, qHi] = (statistic === "p95" ? quadrum.p95Ci95 : quadrum.ci95) ?? [NaN, NaN];
+	const [cLo, cHi] = (statistic === "p95" ? chessground.p95Ci95 : chessground.ci95) ?? [NaN, NaN];
+
+	const ratio = higher ? safeRatio(cValue, qValue) : safeRatio(qValue, cValue);
 
 	// Widest ratio consistent with both intervals: pair each subject's optimistic
 	// bound against the other's pessimistic one. Deliberately conservative --
@@ -250,6 +269,7 @@ export function summarizeRun(record, options = {}) {
 							unit: metric.unit,
 							direction: metric.direction,
 							advisory: metric.advisory,
+							statistic: metric.statistic ?? "median",
 							bySubject: {},
 						});
 					}
@@ -292,9 +312,10 @@ export function summarizeRun(record, options = {}) {
 				unit: shape.unit,
 				direction: shape.direction,
 				advisory: shape.advisory,
+				statistic: shape.statistic,
 				quadrum,
 				chessground,
-				comparison: compareSubjects(quadrum, chessground, shape.direction),
+				comparison: compareSubjects(quadrum, chessground, shape.direction, shape.statistic),
 			};
 		}
 
@@ -352,6 +373,22 @@ export function summarizeRun(record, options = {}) {
  * @returns {any} baseline document
  * @throws when a gated scenario is too noisy to gate honestly
  */
+/**
+ * The central value and interval a metric actually publishes, per its declared
+ * statistic. The baseline must be minted, guarded and stored against the same
+ * statistic the ratio was computed from -- storing a median beside a p95-derived
+ * ratio is the half-converted state that made the duplicate drag rows possible.
+ *
+ * @param {{ median: number, p95: number, ci95: [number, number], p95Ci95: [number, number] }} subject
+ * @param {"median" | "p95"} [statistic]
+ * @returns {{ value: number, ci95: [number, number] }}
+ */
+function centralOf(subject, statistic = "median") {
+	return statistic === "p95"
+		? { value: subject.p95, ci95: subject.p95Ci95 ?? [NaN, NaN] }
+		: { value: subject.median, ci95: subject.ci95 ?? [NaN, NaN] };
+}
+
 export function makeBaseline(summary) {
 	/** @type {string[]} */
 	const tooNoisy = [];
@@ -365,18 +402,76 @@ export function makeBaseline(summary) {
 			continue;
 		}
 
+		const statistic = metric.statistic ?? "median";
+		const q = centralOf(metric.quadrum, statistic);
+		const c = centralOf(metric.chessground, statistic);
+
 		if (scenario.gated) {
-			const halfWidth = (metric.quadrum.ci95[1] - metric.quadrum.ci95[0]) / 2;
-			const relative = Math.abs(safeRatio(halfWidth, metric.quadrum.median));
+			// Rule 1: quadrum's CI half-width must not exceed 8% of its central value.
+			const qHalfWidth = (q.ci95[1] - q.ci95[0]) / 2;
+			const qRelative = Math.abs(safeRatio(qHalfWidth, q.value));
 
 			// A gate whose baseline is noisier than its own tolerance is not a
 			// gate, it is a coin flip that occasionally blocks a PR. Zero-valued
 			// invariants (retained nodes) are exempt: their spread is zero and
 			// the ratio is undefined, not large.
-			if (Number.isFinite(relative) && metric.quadrum.median !== 0 && relative > MAX_GATED_CI_HALF_WIDTH) {
+			if (Number.isFinite(qRelative) && q.value !== 0 && qRelative > MAX_GATED_CI_HALF_WIDTH) {
 				tooNoisy.push(
-					`${scenario.id}/${metric.key}: CI half-width ${(relative * 100).toFixed(1)}% of median (max ${MAX_GATED_CI_HALF_WIDTH * 100}%)`,
+					`${scenario.id}/${metric.key}: quadrum CI half-width ${(qRelative * 100).toFixed(1)}% of ${statistic} (max ${MAX_GATED_CI_HALF_WIDTH * 100}%)`,
 				);
+			}
+
+			// Rule 2: chessground's CI half-width must not exceed 8% of its central
+			// value (same rule). The ratio has a denominator, and two of the three
+			// gated timing metrics in the first minted baseline had a chessground CI
+			// width of exactly zero -- unchecked, because this rule did not exist.
+			const cHalfWidth = (c.ci95[1] - c.ci95[0]) / 2;
+			const cRelative = Math.abs(safeRatio(cHalfWidth, c.value));
+
+			if (Number.isFinite(cRelative) && c.value !== 0 && cRelative > MAX_GATED_CI_HALF_WIDTH) {
+				tooNoisy.push(
+					`${scenario.id}/${metric.key}: chessground CI half-width ${(cRelative * 100).toFixed(1)}% of ${statistic} (max ${MAX_GATED_CI_HALF_WIDTH * 100}%)`,
+				);
+			}
+
+			// Rules 3 & 4: only for timing metrics (unit "ms").
+			if (metric.unit === "ms") {
+				const minMedianMs = MIN_GATED_MEDIAN_TICKS * TIMER_RESOLUTION_MS;
+
+				// Rule 3: neither subject's central value may sit within a few ticks
+				// of the timer floor. Below that, the ratio is real-over-quantized:
+				// the denominator can only move in 5us steps, so it reports a
+				// precision the instrument does not have.
+				if (q.value > 0 && q.value < minMedianMs) {
+					tooNoisy.push(
+						`${scenario.id}/${metric.key}: quadrum ${statistic} ${q.value.toFixed(4)} ms is below ${minMedianMs.toFixed(4)} ms (${MIN_GATED_MEDIAN_TICKS} ticks)`,
+					);
+				}
+
+				if (c.value > 0 && c.value < minMedianMs) {
+					tooNoisy.push(
+						`${scenario.id}/${metric.key}: chessground ${statistic} ${c.value.toFixed(4)} ms is below ${minMedianMs.toFixed(4)} ms (${MIN_GATED_MEDIAN_TICKS} ticks)`,
+					);
+				}
+
+				// Rule 4: zero-width CI with n > 1 is quantization, not precision --
+				// resampling a median that sits on a single tick returns that tick
+				// nearly every time, however far the true value roams between runs.
+				// Genuinely constant invariants (central value === 0) stay exempt,
+				// matching the zero-value carve-out on rules 1 and 2.
+				const qCIWidth = q.ci95[1] - q.ci95[0];
+				if (qCIWidth === 0 && q.value !== 0 && metric.quadrum.n > 1) {
+					tooNoisy.push(
+						`${scenario.id}/${metric.key}: quadrum CI width is exactly zero with n=${metric.quadrum.n} (quantization, not precision)`,
+					);
+				}
+
+				const cCIWidth = c.ci95[1] - c.ci95[0];
+				if (cCIWidth === 0 && c.value !== 0 && metric.chessground.n > 1) {
+					tooNoisy.push(
+						`${scenario.id}/${metric.key}: chessground CI width is exactly zero with n=${metric.chessground.n} (quantization, not precision)`,
+					);
+				}
 			}
 		}
 
@@ -385,10 +480,13 @@ export function makeBaseline(summary) {
 			gated: scenario.gated,
 			unit: metric.unit,
 			direction: metric.direction,
+			statistic,
 			ratio: metric.comparison.ratio,
 			ratioCi95: metric.comparison.ratioCi95,
-			quadrum: { median: metric.quadrum.median, ci95: metric.quadrum.ci95 },
-			chessground: { median: metric.chessground.median, ci95: metric.chessground.ci95 },
+			// `median` is the stored key for continuity with schemaVersion 1, but it
+			// holds whichever statistic the metric declares -- `statistic` says which.
+			quadrum: { median: q.value, ci95: q.ci95 },
+			chessground: { median: c.value, ci95: c.ci95 },
 		};
 	}
 
@@ -622,6 +720,10 @@ export function formatValue(value, unit) {
 
 	switch (unit) {
 		case "ms":
+			// Values at or below zero, or below the timer resolution, were not measured.
+			if (v === 0 || (v > 0 && v < TIMER_RESOLUTION_MS)) {
+				return "< 0.01 ms";
+			}
 			return `${v.toFixed(2)} ms`;
 		case "bytes":
 			return v >= 1024 ? `${(v / 1024).toFixed(1)} kB` : `${Math.round(v)} B`;
@@ -651,11 +753,23 @@ export function escapeCell(text) {
  *
  * @param {number} ratio
  * @param {boolean} tie
+ * @param {boolean} belowResolution true if either subject's value is below the timer floor
  * @returns {string}
  */
-export function formatRatio(ratio, tie) {
+export function formatRatio(ratio, tie, belowResolution = false) {
 	if (!Number.isFinite(ratio)) {
 		return "—";
+	}
+
+	// When either subject is below timer resolution, we cannot claim a magnitude.
+	// Keep the direction marker (win/parity) since direction is still known.
+	if (belowResolution) {
+		if (tie) {
+			return "below timer resolution — parity";
+		}
+		return ratio < 1
+			? "**below timer resolution — quadrum wins** ✅"
+			: "below timer resolution — **chessground wins**";
 	}
 
 	const text = `${ratio.toFixed(2)}×`;
@@ -691,11 +805,14 @@ export function renderHeadlineTable(summary) {
 		.filter((scenario) => scenario.measured && scenario.metrics[scenario.headlineMetric])
 		.map((scenario) => {
 			const metric = scenario.metrics[scenario.headlineMetric];
-			const quadrum = formatValue(metric.quadrum.median, metric.unit);
-			const chessground = formatValue(metric.chessground.median, metric.unit);
+			const qValue = metric.statistic === "p95" ? metric.quadrum.p95 : metric.quadrum.median;
+			const cValue = metric.statistic === "p95" ? metric.chessground.p95 : metric.chessground.median;
+			const quadrum = formatValue(qValue, metric.unit);
+			const chessground = formatValue(cValue, metric.unit);
 			const better = !metric.comparison.tie && metric.comparison.verdict === "quadrum";
+			const belowResolution = metric.unit === "ms" && (qValue < TIMER_RESOLUTION_MS || cValue < TIMER_RESOLUTION_MS);
 
-			return `| ${escapeCell(scenario.title)} | ${better ? `**${quadrum}**` : quadrum} | ${chessground} | ${formatRatio(metric.comparison.ratio, metric.comparison.tie)} |`;
+			return `| ${escapeCell(scenario.title)} | ${better ? `**${quadrum}**` : quadrum} | ${chessground} | ${formatRatio(metric.comparison.ratio, metric.comparison.tie, belowResolution)} |`;
 		});
 
 	const date = summary.run.startedAt.slice(0, 10);
@@ -772,9 +889,10 @@ export function renderFullReport(summary) {
 				`${formatValue(stats.ci95[0], metric.unit)}–${formatValue(stats.ci95[1], metric.unit)}`;
 			const headline = metric.key === scenario.headlineMetric ? " ⭐" : "";
 			const advisory = metric.advisory ? " ⚠️" : "";
+			const belowResolution = metric.unit === "ms" && (q.median < TIMER_RESOLUTION_MS || c.median < TIMER_RESOLUTION_MS);
 
 			lines.push(
-				`| ${escapeCell(metric.label)}${headline}${advisory} | ${formatValue(q.median, metric.unit)} | ${formatValue(q.p95, metric.unit)} | ${ci(q)} | ${formatValue(c.median, metric.unit)} | ${formatValue(c.p95, metric.unit)} | ${ci(c)} | ${formatRatio(metric.comparison.ratio, metric.comparison.tie)} | ${q.n}/${c.n} |`,
+				`| ${escapeCell(metric.label)}${headline}${advisory} | ${formatValue(q.median, metric.unit)} | ${formatValue(q.p95, metric.unit)} | ${ci(q)} | ${formatValue(c.median, metric.unit)} | ${formatValue(c.p95, metric.unit)} | ${ci(c)} | ${formatRatio(metric.comparison.ratio, metric.comparison.tie, belowResolution)} | ${q.n}/${c.n} |`,
 			);
 		}
 

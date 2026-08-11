@@ -24,7 +24,23 @@ export const engineArrowTickScenario: Scenario = {
 		"Both mounted with drawing enabled and a static position; only the auto/engine arrow layer is replaced per tick. Neither adapter re-applies the FEN — doing so would make this measure a full position diff.",
 	endCondition:
 		"The new arrow layer is present in the DOM and laid out; the position is unchanged.",
-	headlineMetric: "arrow-tick-layout-ms",
+	// Script, not layout. Replacing the arrow layer mutates SVG children inside a
+	// fixed viewBox, so most ticks force no real layout at all and the layout
+	// metric measures whether the browser happened to do any -- quadrum's layout
+	// samples come back with a median of 0.21ms against a p95 of 0.93ms, and the
+	// bootstrap CI on that median spans 28% of it, three times the cap a gated
+	// metric is allowed. The script metric over the same samples lands inside 2%.
+	//
+	// This makes the published headline WORSE for quadrum, not better -- the
+	// layout ratio was 3.50x and the script ratio is 12.75x -- which is the point:
+	// it is the metric that actually carries the cost this scenario exists to
+	// expose, and the layout row stays in the full table either way.
+	//
+	// The spread itself is a symptom, not noise: the layer is torn down and
+	// rebuilt every tick, so some ticks land real layout work and some do not.
+	// Once that rebuild becomes a diff (docs/plans/arrow-diff-and-lazy-mount.md,
+	// item 2), the layout metric should tighten enough to headline again.
+	headlineMetric: "arrow-tick-script-ms",
 	defaults: { sizePx: 480, iterations: 100, warmupIterations: 2, discardFirst: 10 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {

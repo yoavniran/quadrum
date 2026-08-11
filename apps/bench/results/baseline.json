@@ -1,0 +1,219 @@
+{
+  "schemaVersion": 1,
+  "mintedFrom": {
+    "runId": "run-1786461855102",
+    "startedAt": "2026-08-11T15:24:15.102Z",
+    "gitSha": "88b879e2063124293aed7c10866271dad2ae49d5",
+    "repetitions": 31
+  },
+  "browser": {
+    "cpuThrottlingRate": 4,
+    "headless": true
+  },
+  "subjects": {
+    "quadrum": "0.2.2",
+    "chessground": "9.2.1"
+  },
+  "scenarios": {
+    "mount": {
+      "headlineMetric": "mount-layout-ms",
+      "gated": true,
+      "unit": "ms",
+      "direction": "lower",
+      "ratio": 1.5476190476791032,
+      "ratioCi95": [
+        1.5117370891587698,
+        1.5970873786155382
+      ],
+      "quadrum": {
+        "median": 1.625,
+        "ci95": [
+          1.6099999998696148,
+          1.6450000000186265
+        ]
+      },
+      "chessground": {
+        "median": 1.0499999999592546,
+        "ci95": [
+          1.0300000000279397,
+          1.0649999999441206
+        ]
+      }
+    },
+    "update-throughput-anim-off": {
+      "headlineMetric": "update-layout-ms",
+      "gated": true,
+      "unit": "ms",
+      "direction": "lower",
+      "ratio": 5.000000038805108,
+      "ratioCi95": [
+        5.000000031044086,
+        5.3333333708449375
+      ],
+      "quadrum": {
+        "median": 0.0750000000698492,
+        "ci95": [
+          0.07499999995343387,
+          0.08000000001629815
+        ]
+      },
+      "chessground": {
+        "median": 0.014999999897554517,
+        "ci95": [
+          0.014999999897554517,
+          0.014999999897554517
+        ]
+      }
+    },
+    "update-throughput-anim-on": {
+      "headlineMetric": "frame-interval-p95",
+      "gated": false,
+      "unit": "ms",
+      "direction": "lower",
+      "ratio": 1,
+      "ratioCi95": [
+        1,
+        1
+      ],
+      "quadrum": {
+        "median": 16.67000000000189,
+        "ci95": [
+          16.67000000000189,
+          16.67000000000189
+        ]
+      },
+      "chessground": {
+        "median": 16.67000000000189,
+        "ci95": [
+          16.67000000000189,
+          16.67000000000189
+        ]
+      }
+    },
+    "engine-arrow-tick": {
+      "headlineMetric": "arrow-tick-script-ms",
+      "gated": true,
+      "unit": "ms",
+      "direction": "lower",
+      "ratio": 15.999999984477958,
+      "ratioCi95": [
+        15.777777726612525,
+        16.111111094295566
+      ],
+      "quadrum": {
+        "median": 0.7199999999720603,
+        "ci95": [
+          0.7100000001955777,
+          0.7249999999185093
+        ]
+      },
+      "chessground": {
+        "median": 0.045000000041909516,
+        "ci95": [
+          0.045000000041909516,
+          0.04500000015832484
+        ]
+      }
+    },
+    "drag-latency": {
+      "headlineMetric": "drag-latency-p95-ms",
+      "gated": false,
+      "unit": "ms",
+      "direction": "lower",
+      "ratio": 0.8805309734500169,
+      "ratioCi95": [
+        0.8741721853719181,
+        0.8888888888888888
+      ],
+      "quadrum": {
+        "median": 1.9900000000052387,
+        "ci95": [
+          1.9799999999813735,
+          2
+        ]
+      },
+      "chessground": {
+        "median": 2.2600000000093132,
+        "ci95": [
+          2.25,
+          2.265000000130385
+        ]
+      }
+    },
+    "resize-storm": {
+      "headlineMetric": "resize-layout-ms",
+      "gated": false,
+      "unit": "ms",
+      "direction": "lower",
+      "ratio": 0.08484848493229533,
+      "ratioCi95": [
+        0.08383233540531244,
+        0.09815950930060233
+      ],
+      "quadrum": {
+        "median": 0.07000000006519258,
+        "ci95": [
+          0.07000000006519258,
+          0.0800000000745058
+        ]
+      },
+      "chessground": {
+        "median": 0.8249999999534339,
+        "ci95": [
+          0.8149999999441206,
+          0.8350000000209548
+        ]
+      }
+    },
+    "memory-leak": {
+      "headlineMetric": "retained-nodes",
+      "gated": true,
+      "unit": "count",
+      "direction": "lower",
+      "ratio": 1,
+      "ratioCi95": [
+        1,
+        1
+      ],
+      "quadrum": {
+        "median": 0,
+        "ci95": [
+          0,
+          0
+        ]
+      },
+      "chessground": {
+        "median": 0,
+        "ci95": [
+          0,
+          0
+        ]
+      }
+    },
+    "bundle-size": {
+      "headlineMetric": "bundle-brotli-bytes",
+      "gated": true,
+      "unit": "bytes",
+      "direction": "lower",
+      "ratio": 0.7261495013679287,
+      "ratioCi95": [
+        0.7261495013679287,
+        0.7261495013679287
+      ],
+      "quadrum": {
+        "median": 8228,
+        "ci95": [
+          8228,
+          8228
+        ]
+      },
+      "chessground": {
+        "median": 11331,
+        "ci95": [
+          11331,
+          11331
+        ]
+      }
+    }
+  }
+}

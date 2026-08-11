@@ -280,8 +280,10 @@ having no gate.
 
 1. Confirm the change is a *deliberate* trade, not a regression you are tired of arguing with.
    Write the trade down in the PR description.
-2. Run the benchmark from a **`workflow_dispatch`** on `main`, at `repetitions: 31`. Not locally —
-   a laptop baseline gates a CI runner forever after.
+2. Run the benchmark from a **`workflow_dispatch`** on `main`, and **type `31` into the
+   `repetitions` field** — the dispatch default is 15, which is right for "show me where we stand"
+   and too loose for the number every later run is gated against. Not locally — a laptop baseline
+   gates a CI runner forever after.
 3. `node .github/scripts/write-bench-report.mjs baseline <results.json> --out apps/bench/results/baseline.json`.
    If it throws, a gated scenario is too noisy to gate; fix the noise, do not widen the tolerance.
 4. Diff the baseline. Every changed ratio needs a sentence in the PR saying why it moved.

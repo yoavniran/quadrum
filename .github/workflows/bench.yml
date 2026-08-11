@@ -45,9 +45,14 @@ on:
   workflow_dispatch:
     inputs:
       repetitions:
-        description: "Repetitions (31 when minting a baseline)"
+        # 15 matches the nightly -- the run that is publishable and feeds the
+        # README -- because most dispatches are "show me where we stand", and at
+        # 31 that answer costs the better part of an hour for confidence
+        # intervals that were already degenerate at 15. Minting a baseline is the
+        # exception, not the default: type 31 for that one.
+        description: "Repetitions (type 31 when minting a baseline)"
         required: false
-        default: "31"
+        default: "15"
 
 permissions:
   contents: read

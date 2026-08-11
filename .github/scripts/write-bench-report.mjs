@@ -159,7 +159,13 @@ if (mode === "summarize") {
 	const baseline = makeBaseline(summarizeRun(readJson(positional[0])));
 
 	writeFileSync(out, `${JSON.stringify(baseline, null, 2)}\n`);
-	console.log(`baseline written to ${out} (${Object.keys(baseline.scenarios).length} gated scenarios)`);
+	// Every scenario is recorded, but only the gated ones produce a verdict --
+	// the rest are carried so a later run can be compared against them by hand.
+	// Saying "N gated scenarios" here reads as though all of them block a PR.
+	const gatedCount = Object.values(baseline.scenarios).filter((entry) => entry.gated).length;
+	console.log(
+		`baseline written to ${out} (${Object.keys(baseline.scenarios).length} scenarios, ${gatedCount} gated)`,
+	);
 } else if (mode === "publish" || mode === "check") {
 	const readmePath = flag("readme");
 

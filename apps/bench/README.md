@@ -280,16 +280,29 @@ having no gate.
 
 1. Confirm the change is a *deliberate* trade, not a regression you are tired of arguing with.
    Write the trade down in the PR description.
-2. Run the benchmark from a **`workflow_dispatch`** on `main`, and **type `31` into the
-   `repetitions` field** — the dispatch default is 15, which is right for "show me where we stand"
-   and too loose for the number every later run is gated against. Not locally — a laptop baseline
-   gates a CI runner forever after.
-3. `node .github/scripts/write-bench-report.mjs baseline <results.json> --out apps/bench/results/baseline.json`.
-   If it throws, a gated scenario is too noisy to gate; fix the noise, do not widen the tolerance.
+2. Run the benchmark from a **`workflow_dispatch`** on `main`, **type `31` into the `repetitions`
+   field**, and **tick `mint_baseline`**. The dispatch default is 15, which is right for "show me
+   where we stand" and too loose for the number every later run is gated against. Not locally — a
+   laptop baseline gates a CI runner forever after.
+3. The `mint-baseline` job runs `write-bench-report.mjs baseline` for you and opens a PR with the
+   new `results/baseline.json` and, beside it, `results/baseline-run.json` — the full record it was
+   derived from. If the job fails, a gated scenario is too noisy to gate; fix the noise, do not
+   widen the tolerance.
 4. Diff the baseline. Every changed ratio needs a sentence in the PR saying why it moved.
 5. If the PR also touches `packages/*/src`, add the **`bench-rebaseline`** label — and expect a
    reviewer to read the source diff and the ratio diff together, which is the entire point.
-6. Never rebaseline and refresh the published README block in the same PR.
+6. Never rebaseline and refresh the published README block in the same PR. The two jobs are
+   separate for this reason: `mint-baseline` never writes `README.md` or `latest.json`.
+
+Ticking `mint_baseline` is opt-in and the PR is still merged by a human, so the no-auto-rebaselining
+rule holds. What it removes is only the step in the middle — download the artifact, find the JSON,
+run the CLI on your laptop — which is where a dispatch run's evidence used to go to die.
+
+**Keeping a run without rebaselining.** A dispatch that leaves `mint_baseline` unticked still
+uploads its full JSON as a build artifact, retained 30 days. That is the right home for a "where do
+we stand" run. Only reach for the checklist above when you actually intend to move the gate — and
+when you want a durable before/after around a performance fix, mint the *before* deliberately, so
+`baseline-run.json` is in git to diff the after against.
 
 ---
 

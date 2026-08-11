@@ -16,7 +16,8 @@ name: Benchmarks
 #   nightly
 #     -> all 8 scenarios, publishable, never blocks, opens a refresh PR
 #   workflow_dispatch
-#     -> full run at high repetitions, for minting a baseline
+#     -> full run at the repetitions you type; with mint_baseline, also opens a
+#        PR committing the run as the gate baseline plus its raw evidence
 #
 # Methodology, the gate rules and the rebaseline checklist: apps/bench/README.md
 on:
@@ -53,6 +54,18 @@ on:
         description: "Repetitions (type 31 when minting a baseline)"
         required: false
         default: "15"
+      mint_baseline:
+        # Opt-in, and still merged by a human. The rule the README states is "no
+        # auto-rebaselining bot", because a gate that records whatever happened is
+        # a ratchet; asking for a baseline explicitly and then reviewing the ratio
+        # diff in a PR is not that. What this removes is only the undocumented
+        # manual step in the middle -- download the artifact, find the JSON, run
+        # the CLI locally -- which is exactly where a dispatch run's evidence has
+        # been going to die.
+        description: "Also open a PR committing this run as the gate baseline (pair with 31)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -267,3 +280,82 @@ jobs:
             runner.
 
             Methodology: `apps/bench/README.md`.
+
+  # Dispatch only, and only when asked for. Deliberately separate from `publish`:
+  # the README block and the gate baseline are different products with different
+  # review questions, and apps/bench/README.md's rebaseline checklist says never
+  # to move both in one PR. This job therefore never touches README.md or
+  # latest.json -- latest.json is what the drift check reads the README against,
+  # and a dispatch run is `publishable: false` precisely so its numbers cannot
+  # reach the published table.
+  #
+  # It commits two files. baseline.json is what the gate compares against, but it
+  # keeps only the headline metric of each gated scenario -- so baseline-run.json
+  # carries the whole record beside it: raw samples, dispersion, the non-gated
+  # scenarios, the CPU model and throttle rate. Without that, "the baseline moved"
+  # is unanswerable six months later, and a before/after around a performance fix
+  # has nothing to diff against.
+  mint-baseline:
+    needs: bench
+    if: github.event_name == 'workflow_dispatch' && inputs.mint_baseline
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Download the results
+        uses: actions/download-artifact@v8
+        with:
+          name: bench-results-${{ github.run_id }}
+          path: apps/bench/results/
+
+      # Throws when a gated scenario's CI half-width exceeds the cap. That failure
+      # is the point -- minting is where an unstable gate gets caught, and the fix
+      # is to quiet the noise, never to widen the tolerance.
+      - name: Mint the baseline
+        run: |
+          node .github/scripts/write-bench-report.mjs baseline \
+            apps/bench/results/latest.json \
+            --out apps/bench/results/baseline.json
+          cp apps/bench/results/latest.json apps/bench/results/baseline-run.json
+
+      - name: Summarize the run into the step summary
+        run: |
+          node .github/scripts/write-bench-report.mjs summarize \
+            apps/bench/results/latest.json >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Open the baseline PR
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: bench/mint-baseline
+          title: "chore: mint the benchmark gate baseline"
+          commit-message: "chore: mint the benchmark gate baseline"
+          add-paths: |
+            apps/bench/results/baseline.json
+            apps/bench/results/baseline-run.json
+          body: |
+            Minted from the `workflow_dispatch` run that requested it. Merging this changes what
+            every later benchmark run is gated against, so it is a review, not a formality.
+
+            Before approving, work through the rebaseline checklist in `apps/bench/README.md`:
+
+            - Every changed ratio needs a sentence saying why it moved. A ratio that moved for a
+              reason nobody can state is a regression being recorded rather than fixed.
+            - Confirm the repetitions were high enough. 15 is right for "show me where we stand";
+              a baseline every later run is measured against wants 31.
+            - If this PR is paired with a change under `packages/*/src`, it needs the
+              `bench-rebaseline` label, and a reviewer should read the source diff and the ratio
+              diff together — that pairing is the single diff no other check in the repo can see.
+
+            `baseline-run.json` is the full record the baseline was derived from — raw samples,
+            dispersion, the non-gated scenarios, and the runner's CPU model and throttle rate.
+            It is evidence, not input: nothing reads it, and it is what makes a future "why did
+            this move?" answerable.

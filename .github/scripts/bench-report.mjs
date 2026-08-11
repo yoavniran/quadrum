@@ -316,8 +316,14 @@ export function summarizeRun(record, options = {}) {
 			runnerOnly: Boolean(scenario.runnerOnly),
 			gated: Boolean(scenario.gated),
 			headlineMetric: scenario.headlineMetric,
+			// bundle-size is measured in Node, so it has zero browser comparisons by
+			// design. Requiring `comparisons.length > 0` for validity branded it
+			// INVALID on every run; a Node-measured scenario is valid as long as no
+			// browser comparison contradicts it (every() over [] is true).
 			measured: comparisons.length > 0 || scenario.id === "bundle-size",
-			valid: comparisons.length > 0 && comparisons.every((comparison) => comparison.valid),
+			valid:
+				(comparisons.length > 0 || scenario.id === "bundle-size") &&
+				comparisons.every((comparison) => comparison.valid),
 			assertionFailures,
 			metrics,
 		};

@@ -18,6 +18,9 @@ export function readEnv(
 		deviceMemory:
 			(navigator as { deviceMemory?: number }).deviceMemory ?? null,
 		mode: import.meta.env.DEV ? "development" : "production",
+		// Decides performance.now() resolution: 5µs when isolated, a 100µs clamp
+		// when not. Recorded so a run's quantization floor is visible in the JSON.
+		crossOriginIsolated: window.crossOriginIsolated === true,
 		quadrumVersion,
 		chessgroundVersion,
 	};

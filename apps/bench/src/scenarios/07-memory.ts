@@ -25,6 +25,10 @@ export const memoryScenario: Scenario = {
 		"All boards destroyed, hosts detached, three forced GCs complete, and the node/listener counters read back at that settled point.",
 	runnerOnly: true,
 	headlineMetric: "retained-nodes",
+	// The verdict is zero-or-not; five repetitions of 125 mount/destroy cycles
+	// with forced GCs at every read point prove it as well as thirty-one would,
+	// and this scenario's forced GCs are the most expensive seconds in a full run.
+	repsCap: 5,
 	defaults: { sizePx: 480, iterations: 25, warmupIterations: 0, discardFirst: 0 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {

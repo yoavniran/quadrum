@@ -130,6 +130,21 @@ bundle-size question — answered in scenario 8, with two CSS rows.
   standard mouse — rather than dispatched as fast as the CDP channel allows. Real pointing device
   input rates are far slower than synchronous CDP roundtrips, and the pacing produces more
   representative measurements.
+- **The page is cross-origin isolated (COOP `same-origin` + COEP `require-corp`), and the JSON
+  records it.** Isolation is what buys `performance.now()` its 5µs resolution; without it Chromium
+  clamps the timer to 100µs, and any bracket under 0.1 ms — a single position update on a fast
+  library — quantizes to 0.0. That collapses medians to zero, makes ratios against them
+  non-finite, and understates the faster subject in exactly the scenarios where it is fastest.
+  The headers are set in `vite.config.ts` for both dev and preview; `env.crossOriginIsolated`
+  in the results JSON says which floor a run was measured against, and the runner both warns on
+  the console and appends a caveat to the JSON when a run was not isolated.
+- **Per-scenario repetition caps.** A scenario may declare `repsCap`, the maximum number of
+  process repetitions worth spending on it; the runner skips it in later repetitions of a broad
+  (`all`/`gated`) sweep. An explicitly requested single scenario is exempt. Today only
+  `memory-leak` is capped (at 5): its verdict is an invariant — retention is zero or it is not —
+  so it does not sharpen with more repetitions, and its forced GCs at every read point are the
+  most expensive seconds in a full run. Cross-run aggregation already pools by scenario id, so a
+  scenario that appears in fewer repetitions simply pools fewer samples.
 
 ### Future work
 

@@ -45,6 +45,7 @@ export function installBenchApi(args: {
 				runnerOnly: s.runnerOnly || false,
 				headlineMetric: s.headlineMetric,
 				gated: GATED_SCENARIO_IDS.includes(s.id),
+				repsCap: s.repsCap ?? null,
 			}));
 		},
 

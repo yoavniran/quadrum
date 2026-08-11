@@ -13,6 +13,7 @@ import { launch, openPage, installHooks } from "./browser.ts";
 import { measureBundles } from "./bundle-size.ts";
 import {
 	aggregateRuns,
+	capScenarioIds,
 	renderConsoleTable,
 	summarizeFailures,
 	exitCodeFor,
@@ -73,6 +74,14 @@ async function main() {
 						scenarioMeta = scenarioList;
 						pageEnv = await page.evaluate((): any => (globalThis as any).__bench.env());
 						browserVersion = browser.version();
+
+						if (pageEnv && pageEnv.crossOriginIsolated === false) {
+							console.warn(
+								"WARNING: page is not cross-origin isolated; performance.now() is " +
+									"clamped to 100µs and sub-0.1ms timings quantize to 0. Check the " +
+									"COOP/COEP headers in vite.config.ts.",
+							);
+						}
 					}
 
 					let scenarioIds: string[] = [];
@@ -95,6 +104,13 @@ async function main() {
 							.map((s: any) => s.id);
 					} else {
 						scenarioIds = [opts.scenario];
+					}
+
+					// An explicitly requested single scenario is exempt: the cap
+					// exists to trim the broad sweeps, not to second-guess someone
+					// asking for exactly this scenario at exactly this rep count.
+					if (opts.scenario === "all" || opts.scenario === "gated") {
+						scenarioIds = capScenarioIds(scenarioIds, scenarioList, runIndex);
 					}
 
 					const results = await page.evaluate(
@@ -200,6 +216,7 @@ async function main() {
 				hardwareConcurrency: cpus().length,
 				deviceMemory: null,
 				mode: "production",
+				crossOriginIsolated: false,
 				quadrumVersion: "unknown",
 				chessgroundVersion: "unknown",
 			},
@@ -220,6 +237,11 @@ async function main() {
 				`CPU throttle rate: ${opts.throttle}`,
 				"Headless has no real vsync; frame-derived metrics are advisory",
 				"Position-replay workload: three real games spliced to 200 half-moves (see apps/bench/src/data/game.ts)",
+				...(pageEnv && pageEnv.crossOriginIsolated === false
+					? [
+							"performance.now() clamped to 100µs (page not cross-origin isolated); sub-0.1ms medians quantize to 0",
+						]
+					: []),
 			],
 		};
 

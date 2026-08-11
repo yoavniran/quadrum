@@ -472,6 +472,15 @@ describe("summarizeRun", () => {
 		expect(bundle.metrics["bundle-css-with-art-bytes"].quadrum.median).toBe(30000);
 	});
 
+	it("treats the Node-measured bundle scenario as valid despite zero browser comparisons", () => {
+		// Regression: `valid` used to require comparisons.length > 0, which branded
+		// bundle-size INVALID on every run even though nothing had failed.
+		const bundle = summarizeRun(record).scenarios.find((s) => s.id === "bundle-size");
+
+		expect(bundle.valid).toBe(true);
+		expect(bundle.assertionFailures).toHaveLength(0);
+	});
+
 	it("reports a run with no repetitions as unmeasured rather than as a zero", () => {
 		const empty = summarizeRun({ ...record, scenarios: [] });
 

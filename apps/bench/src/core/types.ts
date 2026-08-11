@@ -209,6 +209,14 @@ export interface Scenario {
 	 * it is a reviewable diff.
 	 */
 	readonly headlineMetric: string;
+	/**
+	 * Maximum number of process repetitions worth spending on this scenario.
+	 * Unset means "as many as the runner was asked for". An invariant scenario
+	 * (memory retention is zero-or-not) does not sharpen with more repetitions,
+	 * and each of its repetitions is expensive — the cap is how a full 31-rep
+	 * run avoids paying 31× for a verdict that converged after 5.
+	 */
+	readonly repsCap?: number;
 	readonly defaults: ScenarioOptions;
 	/** One adapter, one pass. The harness owns interleaving and repetition. */
 	run(ctx: ScenarioContext): Promise<ScenarioRunResult>;
@@ -231,6 +239,9 @@ export interface BenchEnv {
 	readonly hardwareConcurrency: number;
 	readonly deviceMemory: number | null;
 	readonly mode: "development" | "production";
+	/** True when COOP/COEP made the page cross-origin isolated, giving
+	 *  performance.now() 5µs resolution instead of the 100µs clamp. */
+	readonly crossOriginIsolated: boolean;
 	readonly quadrumVersion: string;
 	readonly chessgroundVersion: string;
 }
@@ -253,6 +264,8 @@ export interface ScenarioMeta {
 	readonly runnerOnly: boolean;
 	readonly headlineMetric: string;
 	readonly gated: boolean;
+	/** Repetition cap, null when the scenario runs in every repetition. */
+	readonly repsCap: number | null;
 }
 
 export interface BenchApi {

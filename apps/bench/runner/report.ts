@@ -118,6 +118,26 @@ export function aggregateRuns(
 }
 
 /**
+ * Drop the scenarios whose repetition cap this run index has already met.
+ *
+ * `runIndex` is zero-based: a scenario with `repsCap: 5` runs in repetitions
+ * 0..4 and is skipped from repetition 5 on. A missing/null cap means the
+ * scenario runs in every repetition.
+ */
+export function capScenarioIds(
+	ids: readonly string[],
+	meta: readonly { id: string; repsCap?: number | null }[],
+	runIndex: number,
+): string[] {
+	const capById = new Map(meta.map((m) => [m.id, m.repsCap]));
+
+	return ids.filter((id) => {
+		const cap = capById.get(id);
+		return typeof cap !== "number" || runIndex < cap;
+	});
+}
+
+/**
  * Render a fixed-width text table for console output.
  * Invalid comparisons render with their numbers suppressed.
  */

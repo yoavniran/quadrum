@@ -13,8 +13,10 @@ import {
 	guardBaselineChange,
 	formatRatio,
 	SCHEMA_VERSION,
+	TIMER_RESOLUTION_MS,
+	MIN_GATED_MEDIAN_TICKS,
 } from "./bench-report.mjs";
-import { percentile, median, medianCi, describe as describeSamples } from "./bench-stats.mjs";
+import { percentile, median, medianCi, describe as describeSamples, statisticCi, p95Ci } from "./bench-stats.mjs";
 
 /** A metric entry as `summarizeRun` produces it, with the comparison overridable. */
 function metric({
@@ -749,7 +751,7 @@ describe("formatValue", () => {
 	});
 
 	it("never emits a negative zero", () => {
-		expect(formatValue(-0, "ms")).toBe("0.00 ms");
+		expect(formatValue(-0, "ms")).toBe("< 0.01 ms");
 		expect(formatValue(-0, "count")).toBe("0");
 	});
 
@@ -822,7 +824,540 @@ describe("bench-stats", () => {
 		const stats = describeSamples([1, 2, 3, 4, 5]);
 
 		expect(Object.keys(stats).sort()).toEqual(
-			["ci95", "mad", "max", "mean", "median", "min", "n", "p95", "raw", "stddev"].sort(),
+			["ci95", "mad", "max", "mean", "median", "min", "n", "p95", "p95Ci95", "raw", "stddev"].sort(),
 		);
+	});
+
+	// UNIT-001: bootstrap CI for any statistic, not just median
+	it("statisticCi with identity estimator behaves sanely", () => {
+		const samples = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+		const identity = (values) => values[0]; // simple identity-ish estimator
+		const result = statisticCi(samples, identity, { seed: 0x5eed });
+
+		expect(Array.isArray(result)).toBe(true);
+		expect(result.length).toBe(2);
+		expect(result[0]).toBeLessThanOrEqual(result[1]);
+	});
+
+	it("p95Ci returns [NaN, NaN] for an empty array", () => {
+		expect(p95Ci([])).toEqual([NaN, NaN]);
+	});
+
+	it("p95Ci returns [x, x] for a single sample", () => {
+		expect(p95Ci([7])).toEqual([7, 7]);
+	});
+
+	it("medianCi produces identical intervals to statisticCi with median estimator", () => {
+		const samples = [3, 4, 4, 5, 5, 5, 6, 6, 7, 12];
+		const options = { seed: 0x5eed };
+
+		const medianResult = medianCi(samples, options);
+		const statisticResult = statisticCi(samples, median, options);
+
+		expect(medianResult).toEqual(statisticResult);
+	});
+
+	it("describe returns both ci95 (median's interval) and p95Ci95 (p95's interval)", () => {
+		const samples = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+		const stats = describeSamples(samples);
+
+		expect(stats.ci95).toBeDefined();
+		expect(stats.p95Ci95).toBeDefined();
+		expect(Array.isArray(stats.ci95)).toBe(true);
+		expect(Array.isArray(stats.p95Ci95)).toBe(true);
+	});
+
+	it("on a right-skewed sample, p95 interval sits above median interval", () => {
+		// Create a right-skewed distribution: many small values, one large outlier
+		const samples = [1, 1, 1, 2, 2, 2, 3, 3, 4, 5, 6, 7, 8, 9, 10, 50];
+		const stats = describeSamples(samples);
+
+		const medianLo = stats.ci95[0];
+		const medianHi = stats.ci95[1];
+		const p95Lo = stats.p95Ci95[0];
+		const p95Hi = stats.p95Ci95[1];
+
+		// The p95 value should be greater than or equal to the median value
+		expect(stats.p95).toBeGreaterThanOrEqual(stats.median);
+		// The p95 interval should generally sit above the median interval
+		// (at least its lower bound should be >= median's lower bound)
+		expect(p95Lo).toBeGreaterThanOrEqual(medianLo);
+	});
+});
+
+// UNIT-002: compare the statistic the metric actually declares
+describe("compareSubjects with statistic parameter", () => {
+	it("two metrics from same sample with different statistics produce different ratios", () => {
+		const quadrumSamples = [10, 12, 14, 16, 18];
+		const chessgoundSamples = [20, 22, 24, 26, 28];
+
+		const quadrum = describeSamples(quadrumSamples);
+		const chessground = describeSamples(chessgoundSamples);
+
+		// Compare using median
+		const medianRatio = compareSubjects(quadrum, chessground, "lower", "median");
+		// Compare using p95
+		const p95Ratio = compareSubjects(quadrum, chessground, "lower", "p95");
+
+		// The two ratios should differ
+		expect(medianRatio.ratio).not.toEqual(p95Ratio.ratio);
+	});
+
+	it("omitted statistic defaults to median", () => {
+		const quadrum = { median: 10, p95: 15, ci95: [9, 11], p95Ci95: [14, 16] };
+		const chessground = { median: 20, p95: 28, ci95: [19, 21], p95Ci95: [27, 29] };
+
+		const resultDefault = compareSubjects(quadrum, chessground, "lower");
+		const resultExplicit = compareSubjects(quadrum, chessground, "lower", "median");
+
+		expect(resultDefault.ratio).toEqual(resultExplicit.ratio);
+	});
+
+	it("direction inversion (higher) works correctly under statistic p95", () => {
+		const quadrum = { median: 100, p95: 150, ci95: [99, 101], p95Ci95: [149, 151] };
+		const chessground = { median: 50, p95: 70, ci95: [49, 51], p95Ci95: [69, 71] };
+
+		const result = compareSubjects(quadrum, chessground, "higher", "p95");
+
+		// For "higher is better", chessground/quadrum ratio. quadrum is 150, chessground is 70.
+		// So ratio should be 70/150 = 0.467, meaning quadrum wins
+		expect(result.ratio).toBeLessThan(1);
+		expect(result.verdict).toBe("quadrum");
+	});
+
+	it("direction inversion (higher) works correctly under statistic median", () => {
+		const quadrum = { median: 100, p95: 150, ci95: [99, 101], p95Ci95: [149, 151] };
+		const chessground = { median: 50, p95: 70, ci95: [49, 51], p95Ci95: [69, 71] };
+
+		const result = compareSubjects(quadrum, chessground, "higher", "median");
+
+		// For "higher is better", chessground/quadrum ratio. quadrum is 100, chessground is 50.
+		// So ratio should be 50/100 = 0.5, meaning quadrum wins
+		expect(result.ratio).toBeLessThan(1);
+		expect(result.verdict).toBe("quadrum");
+	});
+});
+
+describe("summarizeRun with statistic propagation", () => {
+	it("propagates metric's statistic field onto the emitted metric", () => {
+		const rawRecord = {
+			schemaVersion: SCHEMA_VERSION,
+			scenarioMeta: [
+				{
+					id: "test-scenario",
+					title: "Test",
+					description: "d",
+					expectation: "e",
+					parity: "p",
+					endCondition: "c",
+					runnerOnly: false,
+					gated: false,
+					headlineMetric: "m",
+				},
+			],
+			scenarios: [
+				[
+					{
+						scenarioId: "test-scenario",
+						valid: true,
+						byAdapter: {
+							quadrum: {
+								metrics: [
+									{
+										key: "m",
+										label: "Metric",
+										unit: "ms",
+										direction: "lower",
+										value: 10,
+										samples: [10],
+										statistic: "p95",
+									},
+								],
+							},
+							chessground: {
+								metrics: [
+									{
+										key: "m",
+										label: "Metric",
+										unit: "ms",
+										direction: "lower",
+										value: 20,
+										samples: [20],
+										statistic: "p95",
+									},
+								],
+							},
+						},
+					},
+				],
+			],
+		};
+
+		const summary = summarizeRun(rawRecord);
+		const metric = summary.scenarios[0].metrics["m"];
+
+		expect(metric.statistic).toBe("p95");
+	});
+
+	it("metric with no statistic field defaults to median", () => {
+		const rawRecord = {
+			schemaVersion: SCHEMA_VERSION,
+			scenarioMeta: [
+				{
+					id: "test-scenario",
+					title: "Test",
+					description: "d",
+					expectation: "e",
+					parity: "p",
+					endCondition: "c",
+					runnerOnly: false,
+					gated: false,
+					headlineMetric: "m",
+				},
+			],
+			scenarios: [
+				[
+					{
+						scenarioId: "test-scenario",
+						valid: true,
+						byAdapter: {
+							quadrum: {
+								metrics: [
+									{
+										key: "m",
+										label: "Metric",
+										unit: "ms",
+										direction: "lower",
+										value: 10,
+										samples: [10],
+										// No statistic field
+									},
+								],
+							},
+							chessground: {
+								metrics: [
+									{
+										key: "m",
+										label: "Metric",
+										unit: "ms",
+										direction: "lower",
+										value: 20,
+										samples: [20],
+										// No statistic field
+									},
+								],
+							},
+						},
+					},
+				],
+			],
+		};
+
+		const summary = summarizeRun(rawRecord);
+		const metric = summary.scenarios[0].metrics["m"];
+
+		expect(metric.statistic).toBe("median");
+	});
+
+	it("compareSubjects is called with the metric's statistic in summarizeRun", () => {
+		const rawRecord = {
+			schemaVersion: SCHEMA_VERSION,
+			scenarioMeta: [
+				{
+					id: "test-scenario",
+					title: "Test",
+					description: "d",
+					expectation: "e",
+					parity: "p",
+					endCondition: "c",
+					runnerOnly: false,
+					gated: false,
+					headlineMetric: "m",
+				},
+			],
+			scenarios: [
+				[
+					{
+						scenarioId: "test-scenario",
+						valid: true,
+						byAdapter: {
+							quadrum: {
+								metrics: [
+									{
+										key: "m",
+										label: "Metric",
+										unit: "ms",
+										direction: "lower",
+										value: 10,
+										samples: [10, 12, 14],
+										statistic: "p95",
+									},
+								],
+							},
+							chessground: {
+								metrics: [
+									{
+										key: "m",
+										label: "Metric",
+										unit: "ms",
+										direction: "lower",
+										value: 20,
+										samples: [20, 22, 24],
+										statistic: "p95",
+									},
+								],
+							},
+						},
+					},
+				],
+			],
+		};
+
+		const summary = summarizeRun(rawRecord);
+		const metric = summary.scenarios[0].metrics["m"];
+
+		// The comparison should use p95 values, not medians
+		expect(metric.comparison.ratio).not.toEqual(
+			compareSubjects(metric.quadrum, metric.chessground, metric.direction, "median").ratio,
+		);
+	});
+});
+
+// UNIT-004: render sub-resolution values as such
+describe("formatValue with timer resolution", () => {
+	it("formatValue(0, 'ms') returns '< 0.01 ms'", () => {
+		expect(formatValue(0, "ms")).toBe("< 0.01 ms");
+	});
+
+	it("formatValue(0.002, 'ms') returns '< 0.01 ms'", () => {
+		expect(formatValue(0.002, "ms")).toBe("< 0.01 ms");
+	});
+
+	it("formatValue(0.02, 'ms') returns '0.02 ms'", () => {
+		expect(formatValue(0.02, "ms")).toBe("0.02 ms");
+	});
+
+	it("formatValue(-0, 'ms') returns '< 0.01 ms' (not -0)", () => {
+		const result = formatValue(-0, "ms");
+		expect(result).toBe("< 0.01 ms");
+		expect(result).not.toContain("-");
+	});
+
+	it("formatValue(NaN, ...) never emits NaN string", () => {
+		expect(formatValue(NaN, "ms")).not.toContain("NaN");
+		expect(formatValue(NaN, "ms")).toBe("—");
+	});
+
+	it("non-ms units are unaffected by the resolution rule", () => {
+		expect(formatValue(0.002, "bytes")).toBe("0 B");
+		expect(formatValue(0.002, "count")).toBe("0");
+		expect(formatValue(0.002, "percent")).toBe("0.0%");
+	});
+});
+
+describe("formatRatio with below resolution", () => {
+	it("formatRatio with belowResolution=true and tie renders 'below timer resolution'", () => {
+		const result = formatRatio(0.5, true, true);
+		expect(result).toContain("below timer resolution");
+		expect(result).toContain("parity");
+	});
+
+	it("formatRatio with belowResolution=true and quadrum win keeps ✅ marker", () => {
+		const result = formatRatio(0.5, false, true); // ratio < 1 = quadrum wins
+		expect(result).toContain("below timer resolution");
+		expect(result).toContain("quadrum wins");
+		expect(result).toContain("✅");
+	});
+
+	it("formatRatio with belowResolution=true and chessground win renders correctly", () => {
+		const result = formatRatio(2.0, false, true); // ratio > 1 = chessground wins
+		expect(result).toContain("below timer resolution");
+		expect(result).toContain("chessground wins");
+		expect(result).not.toContain("✅");
+	});
+
+	it("formatRatio without belowResolution renders numeric ratio", () => {
+		const result = formatRatio(0.5, false, false);
+		expect(result).toContain("0.50");
+		expect(result).not.toContain("below timer resolution");
+	});
+
+	it("formatValue integration: quadrum 0 and chessground 0.8 renders below resolution with quadrum win marker", () => {
+		const qValue = 0;
+		const cValue = 0.8;
+		const quadrumFormatted = formatValue(qValue, "ms");
+		const chessgoundFormatted = formatValue(cValue, "ms");
+
+		// Both should format correctly
+		expect(quadrumFormatted).toBe("< 0.01 ms");
+		expect(chessgoundFormatted).toBe("0.80 ms");
+
+		// The ratio should be below resolution
+		const belowResolution = qValue < TIMER_RESOLUTION_MS || cValue < TIMER_RESOLUTION_MS;
+		expect(belowResolution).toBe(true);
+
+		// The formatRatio should still mark quadrum as winner
+		const result = formatRatio(0, false, belowResolution); // 0/0.8 = 0, ratio < 1 = quadrum wins
+		expect(result).toContain("below timer resolution");
+		expect(result).toContain("quadrum wins");
+		expect(result).toContain("✅");
+	});
+});
+
+// UNIT-006: refuse to mint baseline with floor-bound denominator
+describe("makeBaseline validation", () => {
+	function baselineScenario({ gated = true, unit = "ms", direction = "lower", qMedian = 0.15, cMedian = 0.15, qN = 10, cN = 10 } = {}) {
+		return {
+			id: "test",
+			title: "Test Scenario",
+			description: "d",
+			expectation: "e",
+			parity: "p",
+			endCondition: "c",
+			runnerOnly: false,
+			gated,
+			headlineMetric: "m",
+			measured: true,
+			valid: true,
+			assertionFailures: [],
+			metrics: {
+				m: {
+					key: "m",
+					label: "Metric",
+					unit,
+					direction,
+					statistic: "median",
+					quadrum: {
+						n: qN,
+						median: qMedian,
+						p95: qMedian,
+						ci95: [qMedian * 0.95, qMedian * 1.05],
+						p95Ci95: [qMedian * 0.95, qMedian * 1.05],
+					},
+					chessground: {
+						n: cN,
+						median: cMedian,
+						p95: cMedian,
+						ci95: [cMedian * 0.95, cMedian * 1.05],
+						p95Ci95: [cMedian * 0.95, cMedian * 1.05],
+					},
+					comparison: {
+						ratio: qMedian / cMedian,
+						ratioCi95: [(qMedian * 0.95) / (cMedian * 1.05), (qMedian * 1.05) / (cMedian * 0.95)],
+						verdict: "parity",
+						tie: true,
+					},
+				},
+			},
+		};
+	}
+
+	function baselineSummary(scenario) {
+		return {
+			schemaVersion: SCHEMA_VERSION,
+			run: { id: "run-1", startedAt: "2026-08-01T00:00:00.000Z", durationMs: 1000, trigger: "schedule", publishable: true },
+			env: { node: "v24.0.0", platform: "linux", arch: "x64", cpus: 4, cpuModel: "AMD EPYC 7763", gitSha: "9f1c0beabcdef", gitRef: "main", gitDirty: false },
+			browser: { name: "chromium", version: "141.0", headless: true, viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1, cpuThrottlingRate: 4 },
+			subjects: { quadrum: "0.2.2", chessground: "9.2.1" },
+			config: { repetitions: 7, warmups: 1, order: "interleaved-abba", freshContextPerRepetition: true },
+			caveats: [],
+			scenarios: [scenario],
+		};
+	}
+
+	it("throws when gated metric has chessground median below floor", () => {
+		const scen = baselineScenario({ cMedian: 0.015 }); // floor-bound: 3 ticks
+		const sum = baselineSummary(scen);
+
+		expect(() => makeBaseline(sum)).toThrow(/chessground/);
+	});
+
+	it("throws when gated metric has wide chessground CI", () => {
+		const scen = baselineScenario({
+			cMedian: 0.3,
+			gated: true,
+		});
+		// Make chessground CI very wide (> 8%)
+		scen.metrics.m.chessground.ci95 = [0.1, 0.5];
+		const sum = baselineSummary(scen);
+
+		expect(() => makeBaseline(sum)).toThrow();
+	});
+
+	it("throws when gated metric has chessground CI width exactly zero with n > 1", () => {
+		const scen = baselineScenario({ cMedian: 0.15, cN: 5 });
+		scen.metrics.m.chessground.ci95 = [0.15, 0.15]; // exact zero width
+		scen.gated = true;
+		const sum = baselineSummary(scen);
+
+		expect(() => makeBaseline(sum)).toThrow(/chessground.*zero.*quantization/);
+	});
+
+	it("still mints retained-nodes invariant (both subjects 0, zero-width CI, count unit)", () => {
+		const scen = baselineScenario({ unit: "count", qMedian: 0, cMedian: 0, qN: 5 });
+		scen.metrics.m.quadrum.ci95 = [0, 0];
+		scen.metrics.m.chessground.ci95 = [0, 0];
+		scen.gated = true;
+		const sum = baselineSummary(scen);
+
+		expect(() => makeBaseline(sum)).not.toThrow();
+	});
+
+	it("still mints bundle-size metric with zero-width CI in bytes", () => {
+		const scen = baselineScenario({ unit: "bytes", qMedian: 10000, cMedian: 10000, qN: 5 });
+		scen.metrics.m.quadrum.ci95 = [10000, 10000];
+		scen.metrics.m.chessground.ci95 = [10000, 10000];
+		scen.gated = true;
+		const sum = baselineSummary(scen);
+
+		expect(() => makeBaseline(sum)).not.toThrow();
+	});
+
+	it("mints healthy gated ms metric (medians > 0.1 ms, CI half-widths < 8%)", () => {
+		const scen = baselineScenario({
+			qMedian: 0.5,
+			cMedian: 0.5,
+			unit: "ms",
+			gated: true,
+		});
+		// Create CI half-widths of ~5%
+		scen.metrics.m.quadrum.ci95 = [0.475, 0.525]; // 5% relative
+		scen.metrics.m.chessground.ci95 = [0.475, 0.525]; // 5% relative
+		const sum = baselineSummary(scen);
+
+		expect(() => makeBaseline(sum)).not.toThrow();
+	});
+
+	it("stores the declared statistic in the baseline", () => {
+		const scen = baselineScenario({ qMedian: 0.5, cMedian: 0.5, unit: "ms", gated: true });
+		scen.metrics.m.statistic = "p95";
+		scen.metrics.m.quadrum.p95 = 0.6;
+		scen.metrics.m.chessground.p95 = 0.65;
+		// Set CI for p95
+		scen.metrics.m.quadrum.p95Ci95 = [0.57, 0.63];
+		scen.metrics.m.chessground.p95Ci95 = [0.62, 0.68];
+		const sum = baselineSummary(scen);
+
+		const baseline = makeBaseline(sum);
+		const stored = baseline.scenarios.test;
+
+		expect(stored.statistic).toBe("p95");
+		// The stored "median" should actually be the p95 value
+		expect(stored.quadrum.median).toBe(0.6);
+		expect(stored.chessground.median).toBe(0.65);
+	});
+
+	it("stores median statistic when explicitly declared", () => {
+		const scen = baselineScenario({ qMedian: 0.5, cMedian: 0.5, unit: "ms", gated: true });
+		scen.metrics.m.statistic = "median";
+		scen.metrics.m.quadrum.median = 0.5;
+		scen.metrics.m.chessground.median = 0.5;
+		const sum = baselineSummary(scen);
+
+		const baseline = makeBaseline(sum);
+		const stored = baseline.scenarios.test;
+
+		expect(stored.statistic).toBe("median");
+		expect(stored.quadrum.median).toBe(0.5);
 	});
 });

@@ -5,62 +5,180 @@ which was written against the pre-isolation benchmark and mis-ranked the work.
 
 ## Where we actually stand
 
-Measured 2026-08-11, `run-1786453934016`: 15 repetitions, throttle 4×, and — the
-part that changes the conclusions — a **cross-origin-isolated page**, so
-`performance.now()` resolves at 5µs instead of the 100µs clamp that made three of
-these rows unreadable last time.
+Measured 2026-08-11 from `run-1786461855102` — the 31-repetition run minted as
+`apps/bench/results/baseline.json` — at throttle 4× on a **cross-origin-isolated
+page**, so `performance.now()` resolves at 5µs instead of the 100µs clamp that made
+three of these rows unreadable two runs ago.
 
-| Scenario | Metric | Ratio (quadrum ÷ chessground) | Was |
+The "15 rep" column is `run-1786453934016`, an earlier run **with identical code**.
+It is kept here because the disagreement between the two columns is itself one of
+this document's findings.
+
+| Scenario | Metric | 31 rep (authoritative) | 15 rep | Swing |
+| --- | --- | --- | --- | --- |
+| update-throughput-anim-off | Script | **28.67× — chessground wins** | 27.80× | +3% |
+| update-throughput-anim-off | Layout | 5.00× — chessground wins | 23.75× | **−79%** |
+| engine-arrow-tick | Script | **16.00× — chessground wins** | 9.58× | **+67%** |
+| engine-arrow-tick | Layout | 1.86× — chessground wins | 4.00× | **−54%** |
+| mount | Layout | 1.55× — chessground wins | 1.37× | +13% |
+| mount | Script | **0.65× — quadrum wins** ✅ | 0.74× | −12% |
+| mount | element count | 1.33× (56 vs 42) | 1.33× | — |
+| drag-latency | p95 | 0.88× — quadrum wins ✅ | 0.90× | −2% |
+| resize-storm | Layout | 0.08× — quadrum wins ✅ | 0.29× | **−72%** |
+| memory | retained nodes | 0 vs 0 — parity | parity | — |
+| memory | heap delta | 0.81× — quadrum wins ✅ | (not recorded) | — |
+| bundle-size | every row | 0.73×–0.83× — quadrum wins ✅ | 0.73×–0.83× | — |
+
+### Only some of these numbers are reproducible
+
+Every ratio quadrum loses has a **floor-bound denominator**. The medians behind
+them:
+
+| Metric | quadrum | chessground |
+| --- | --- | --- |
+| `update-layout-ms` | 0.075 ms (15 ticks) | 0.015 ms (**3 ticks**) |
+| `update-script-ms` | 0.430 ms (real) | 0.015 ms (**3 ticks**) |
+| `arrow-tick-script-ms` | 0.720 ms (real) | 0.045 ms (**9 ticks**) |
+| `arrow-tick-layout-ms` | 0.065 ms (13 ticks) | 0.035 ms (**7 ticks**) |
+
+quadrum's numbers are measurements. chessground's are integer counts of the 5µs
+tick. One tick of movement in a 3-tick denominator is a 33% swing — which is
+exactly the ±54–79% seen above.
+
+The Layout family is worse still: p95 runs 0.65–0.81 ms against medians of
+0.015–0.075 ms. Those distributions are bimodal, so the median measures *how often
+the browser skipped layout entirely*, not how much layout cost.
+
+**So: the direction of every finding below is sound, and the magnitude of every
+losing ratio is `real ÷ quantized`.** Two rows survive intact — `update Script`
+(27.80 → 28.67, +3%) and everything on `mount`, whose medians of 1.6 ms and 1.05 ms
+sit hundreds of ticks clear of the floor. Those are the two rows to plan against.
+
+### The gate was minted on the unreproducible ones
+
+`makeBaseline`'s 8% CI guard passed on all five gated metrics and certified
+stability it cannot see. Bootstrapping the median of a quantized distribution
+resamples the same tick nearly every time, so the interval comes back near-zero-width
+*however far that median moves between runs* — and the guard only ever inspected
+quadrum's interval.
+
+| Gated metric | Ratio | Gate fires above | chessground CI width |
 | --- | --- | --- | --- |
-| update-throughput-anim-off | Script | **27.80× — chessground wins** | unmeasurable (`—`) |
-| update-throughput-anim-off | Layout | **23.75× — chessground wins** | unmeasurable (`—`) |
-| engine-arrow-tick | Script | **9.58× — chessground wins** | 6.00× (at the timer floor) |
-| engine-arrow-tick | Layout | 4.00× — chessground wins | unmeasurable |
-| mount | Layout | 1.37× — chessground wins | 1.56× |
-| mount | element count | 1.33× (56 vs 42) | 1.33× |
-| mount | Script | **0.74× — quadrum wins** ✅ | unmeasurable |
-| drag-latency | p95 | 0.90× — quadrum wins ✅ | 0.90× |
-| resize-storm | Layout | 0.29× — quadrum wins ✅ | 0.31× |
-| memory | retained nodes | 0 vs 0 — parity | parity |
-| bundle-size | every row | 0.73×–0.83× — quadrum wins ✅ | (rendered INVALID) |
+| `update-layout-ms` | 5.00× | 5.75× | **0.0000** |
+| `arrow-tick-script-ms` | 16.00× | 18.40× | **0.0000** |
+| `mount-layout-ms` | 1.55× | 1.78× | 0.0175 |
+
+The previous run's `update-layout-ms` was 23.75×, four times over the threshold this
+baseline set. The gate as minted would have failed a nightly that nobody caused,
+which is the fastest way to teach everyone to ignore it. Fixing that is Item 0.
 
 **The headline finding is the first row, and it is not the one this document was
 originally written about.** Position updates — "the scenario a real analysis board
 spends most of its time in", per the scenario's own description — are quadrum's
 worst loss by a wide margin, and the scenario's `expectation` field claims it is
-*expected to favour quadrum*. That expectation is now falsified in the direction
-that matters. It was invisible before only because chessground's 0.03 ms median
-sat under the old 100µs quantization floor and rendered as `0.00`.
+*expected to favour quadrum*. That expectation is falsified in the direction that
+matters. It was invisible before only because chessground's median sat under the
+old 100µs quantization floor and rendered as `0.00`. It is also the **only** losing
+row that reproduced across both runs, which makes it the safest thing to plan
+against.
 
 The second finding is the good news that explains the mount row: **mount Script is
-a quadrum win (0.74×) while mount Layout is a loss (1.37×)**. quadrum's mount
+a quadrum win (0.65×) while mount Layout is a loss (1.55×)**. quadrum's mount
 *code* is faster than chessground's; it loses on mount only because it creates 33%
 more DOM for the browser to lay out. That is precisely the diagnosis lazy layers
-were proposed against, now confirmed by a number rather than assumed.
+were proposed against, now confirmed by a number rather than assumed — and
+confirmed on the one scenario whose timings are clear of the floor.
 
 ### Read the update ratio honestly
 
-27.80× is the ratio of medians, and the two distributions are not the same shape:
+28.67× is a ratio of medians, and the two distributions are not the same shape:
 
-- chessground: median 0.03 ms, p95 0.72 ms — a **24× spread**. Most iterations do
+- chessground: median 0.015 ms, p95 0.60 ms — a **40× spread**. Most iterations do
   almost nothing; a few do real work.
-- quadrum: median 0.70 ms, p95 1.18 ms — a **1.7× spread**. Every iteration pays
+- quadrum: median 0.430 ms, p95 0.97 ms — a **2.3× spread**. Every iteration pays
   the same cost.
 
 That shape difference is itself the finding — quadrum does uniform work per update
 because it re-renders everything, while chessground's cost tracks how much actually
-changed. But it also means the median ratio is not the number a user experiences.
-Total time to replay 100 positions is, and estimated from the medians and tails
-that gap is nearer **7–10×** than 27.8×. Still a bad loss; not a 28× one. See
-"Reporting fixes" below — the benchmark should publish the total directly rather
-than leave a reader to infer it.
+changed. But comparing the medians of two distributions this differently shaped and
+calling the result "how much slower" is wrong twice over: once for the shape, and
+once because the denominator is three timer ticks.
+
+Total elapsed time to replay 100 positions is the honest number. It is
+shape-independent, it is what a consumer actually experiences, and summing 100
+quantized samples cuts the relative quantization error by √100. Estimated from the
+medians and tails, that gap is nearer **7–10×** than 28.67×. Still a bad loss; not
+a 29× one. Item 0 makes the benchmark publish it directly rather than leaving a
+reader to infer it.
+
+---
+
+## Item 0 — fix the instrument before using it
+
+**Priority: first, and blocking. Not because it improves quadrum — it does not —
+but because without it Items 1 and 2 cannot be shown to have worked.**
+
+An earlier draft of this document listed these as "Reporting fixes" that "can land
+at any point". That was wrong. `update-layout-ms` moved 79% and
+`arrow-tick-script-ms` moved 67% between two runs of identical code. Landing Item 1
+against instruments with that much drift means the measurement afterwards cannot
+distinguish a real improvement from the noise, in either direction — which is the
+failure mode where you ship a regression and record it as a win.
+
+Six changes, none of which alters a measured value:
+
+1. **Publish total elapsed time, and headline the throughput scenarios on it.** Sum
+   the kept per-iteration samples into `update-total-script-ms` /
+   `update-total-layout-ms` and `arrow-tick-total-*`, and move `headlineMetric` onto
+   the script total for both scenarios. This is the fix for the floor, not a
+   presentational nicety: a sum of 100 quantized samples has √100 less relative
+   quantization error than any one of them, and it is the number a consumer feels.
+   `mount` keeps `mount-layout-ms` — its medians are hundreds of ticks clear of the
+   floor and it is the only timing scenario that was already trustworthy.
+2. **Make the baseline refuse a floor-bound gate.** `makeBaseline` checked only
+   quadrum's CI, and a bootstrap CI cannot see quantization — resampling a median
+   pinned to one tick returns that tick, so the interval is near-zero-width however
+   far the median roams. Add: the same 8% rule applied to chessground; a minimum
+   central value of 20 ticks (0.1 ms, the point where one tick of movement is a 5%
+   swing, comfortably inside the 15% gate tolerance) for any `ms` metric; and an
+   outright rejection of a zero-width interval on a non-degenerate sample. The
+   zero-median carve-out for genuine invariants (retained nodes) stays.
+3. **Honour the `statistic` a metric declares.** `05-drag-latency.ts` emits
+   `drag-latency-p95-ms` and `drag-latency-median-ms` from the same sample array,
+   tagged `"p95"` and `"median"` — but `compareSubjects` always ratios `.median` and
+   never reads `statistic`, so both rows render byte-identically (1.990 / 2.260 in
+   the baseline run). `apps/bench/README.md` promises that "latency scenarios
+   headline p95, because the tail is what a user feels"; the renderer does not
+   deliver it. The published p95 row carries the median ratio, 0.88×, where the p95
+   ratio is 0.96×. **The current behaviour flatters quadrum**, which is precisely
+   why it gets fixed now rather than when it stops doing so.
+4. **Render sub-resolution values as such.** The resize Script row shows quadrum at
+   0.00 ms — genuinely below the 5µs floor, because quadrum's resize does no
+   scripted work — and renders `0.00× — quadrum wins`. That reads like a division
+   bug. Render "below timer resolution" instead, keeping the win marker, since the
+   direction is known even when the magnitude is not.
+5. **Cap `update-throughput-anim-on` at 3 repetitions.** All 31 repetitions returned
+   identical values with zero-width CIs — 16.665 ms interval, 0 dropped, 100
+   completed, both subjects. That is the synthetic headless frame clock, already
+   flagged advisory and already ungated. Three passes prove the same thing at a
+   twelfth of the ~2.5 minutes a run currently spends re-confirming a constant.
+6. **Record the heap-delta win.** 22,968 B vs 28,480 B, 0.81× to quadrum. Correctly
+   not gated — GC scheduling is nondeterministic — but it belongs in the full table.
+
+### Consequence, and it is intended
+
+Changes 1 and 2 together invalidate the committed `apps/bench/results/baseline.json`:
+it was minted against `update-layout-ms` and `arrow-tick-script-ms`, and it would now
+be refused for exactly the reason it should have been refused the first time. The
+baseline must be re-minted by a dispatched run **after** Item 0 lands and **before**
+Item 1 is measured. Do not hand-edit it, and do not weaken a rule to keep it minting.
 
 ---
 
 ## Item 1 — stop re-rendering everything on every update
 
-**Priority: highest. This is the 27.8× row, and it is the cheapest of the three to
-fix.**
+**Priority: highest of the library items. This is the ~28× row, the only losing row
+that reproduced across both runs, and the cheapest of the three to fix.**
 
 ### The problem
 
@@ -149,10 +267,19 @@ measurement.
 
 ### Acceptance
 
-- `update-throughput-anim-off`: Script ratio under 3×, Layout under 3×. Parity is
-  not a realistic target — chessground's cost genuinely tracks the size of the
-  change, and quadrum will still do a fixed sweep over 32 pieces — but an order of
-  magnitude is available here for very little risk.
+Stated against `update-total-script-ms` — the Item 0 metric — because the
+per-iteration median ratio is not reproducible enough to accept against. Baseline
+that total on the re-minted post-Item-0 run before starting, so there is a
+like-for-like number to compare to.
+
+- `update-throughput-anim-off`: total-script ratio under 3×. Parity is not a
+  realistic target — chessground's cost genuinely tracks the size of the change, and
+  quadrum will still do a fixed sweep over 32 pieces — but an order of magnitude is
+  available here for very little risk.
+- The per-iteration Script and Layout rows should move in the same direction. Treat
+  them as corroboration, not as acceptance: a total that improves while the
+  per-iteration median does not is plausible (the median is quantized); a total that
+  does *not* improve is a failed item whatever the median says.
 - No change to `drag-latency` or `resize-storm` (both already wins; both touch
   `placePieceEl`).
 
@@ -160,14 +287,17 @@ measurement.
 
 ## Item 2 — diff the marks layer instead of rebuilding it
 
-**Priority: second. This is the 9.58× arrow-tick row.** Item 1b removes the cost
-when marks are *absent*; this removes it when they are *present and changing*,
-which is the engine-analysis case quadrum was built for and names itself after.
+**Priority: second. This is the arrow-tick row.** Item 1b removes the cost when
+marks are *absent*; this removes it when they are *present and changing*, which is
+the engine-analysis case quadrum was built for and names itself after.
 
-The pre-isolation run put this at 6.00× with the caveat that chessground's 0.10 ms
-sat at the quantization floor and the true ratio was somewhere in 3–12×. It
-resolves at **9.58× Script / 4.00× Layout** — the top of that band, so the concern
-was warranted and the loss is worse than it first appeared.
+The size of the loss is genuinely uncertain. The pre-isolation run put it at 6.00×
+with chessground at the 100µs quantization floor; the two isolated runs since
+disagree with each other, at **9.58×** and **16.00×** Script. All three share the
+same defect — chessground's denominator is 9 timer ticks — so the honest statement
+is "somewhere around 10–16×, and the instrument cannot currently do better." What
+is not in doubt is the direction, the mechanism, or that this is worse than the
+6.00× first believed.
 
 ### The problem
 
@@ -268,17 +398,25 @@ except for gradient ids. Grep first for any spec asserting on a literal
 
 ### Acceptance
 
-- `engine-arrow-tick`: Script ratio at or under ~2×. Parity is not automatic — the
-  bench's tick workload mutates arrows every tick, so the zero-DOM hot path does
-  not apply to every iteration — but the gradient churn and the rebuild should both
-  be gone.
+- `engine-arrow-tick`: `arrow-tick-total-script-ms` ratio at or under ~2×. Parity is
+  not automatic — the bench's tick workload mutates arrows every tick, so the
+  zero-DOM hot path does not apply to every iteration — but the gradient churn and
+  the rebuild should both be gone.
+- Add a scenario variant, or at minimum a unit test, covering the **unchanged-arrows
+  tick**: the case the design calls the hot path and promises will touch zero DOM.
+  The current bench workload never exercises it, so the acceptance number above
+  cannot confirm the property the whole item is built on.
 
 ---
 
 ## Item 3 — lazy mount layers
 
-**Priority: third. This is the 1.37× mount Layout row and the 56-vs-42 element
-count — and the newly visible 0.74× mount Script win confirms the diagnosis.**
+**Priority: third. This is the 1.55× mount Layout row and the 56-vs-42 element
+count — and the 0.65× mount Script win confirms the diagnosis.**
+
+Worth noting: mount is the **only** scenario here whose acceptance criterion can be
+checked today. Both subjects' medians (1.6 ms and 1.05 ms) are hundreds of timer
+ticks clear of the floor, so its ratio means what it says, before Item 0 and after.
 
 quadrum's mount code is *faster* than chessground's. It loses the mount scenario
 purely on DOM volume: more elements created means more boxes in the first layout.
@@ -349,69 +487,47 @@ Create each layer on first need:
 ### Acceptance
 
 - Element count for the bench's mount configuration drops from 56 to ~40.
-- `mount`: Layout ratio ≤ ~1.1×. With Script already at 0.74×, closing the DOM-
-  volume gap should turn this row into a quadrum win outright.
+- `mount`: Layout ratio ≤ ~1.1×. Note this now starts from 1.55×, not the 1.37× an
+  earlier draft assumed, so the DOM-volume drop has to carry more than budgeted.
+  With Script already at 0.65×, closing that gap should still turn the row into a
+  quadrum win outright.
 - No regression in `update-*`, `engine-arrow-tick` or `drag-latency` (the layers
   exist by then, so the getters cost one branch).
 
 ---
 
-## Reporting fixes (the benchmark, not the library)
-
-Four things the isolated run exposed about the harness itself. None of them change
-a verdict, and the first two are the kind of thing the honesty apparatus exists to
-catch — so they should be fixed regardless of whether they currently flatter
-quadrum.
-
-1. **The drag scenario's two metric rows are identical, and the ⭐ p95 row
-   publishes a median-derived ratio.** `05-drag-latency.ts` builds
-   `drag-latency-p95-ms` and `drag-latency-median-ms` from the *same* sample array,
-   tagged `statistic: "p95"` and `"median"` — but `compareSubjects`
-   (`bench-report.mjs:110`) always ratios `.median` and **never reads
-   `statistic`**. So both rows render byte-identically, and the headline metric
-   reports 0.90× (the median ratio, 1.89/2.09) where the p95 ratio is 0.96×
-   (18.78/19.61). `apps/bench/README.md` states that "latency scenarios headline
-   p95, because the tail is what a user feels" — the renderer does not currently
-   honour that. Fix: have `compareSubjects` ratio the statistic the metric
-   declares, and either drop the duplicate row or make it genuinely median-only.
-   Note the direction — the current behaviour flatters quadrum slightly, which is
-   exactly why it should be fixed now rather than when it stops doing so.
-2. **Publish total replay time for the throughput scenarios.** As analysed above,
-   the median ratio (27.8×) is not what a user experiences when the two
-   distributions have 24× and 1.7× spreads respectively. Sum-of-samples is
-   distribution-shape-independent and is the honest user-facing number for "replay
-   100 positions". Add it as a metric next to the per-update median; it will also
-   make Item 1's improvement legible in the terms a consumer cares about.
-3. **`0.00× — quadrum wins` is a degenerate ratio, not a result.** The resize
-   Script row shows quadrum at 0.00 ms — genuinely below even the 5µs floor,
-   because quadrum's resize does no scripted work at all. Rendering that as a
-   numeric ratio invites the reading that the harness divided by something it
-   should not have. Render sub-resolution values as "below timer resolution"
-   rather than as a number.
-4. **`update-throughput-anim-on` produces no signal under headless and should be
-   rep-capped.** Every metric came back exactly 16.67 ms / 0 dropped / 100
-   completed with zero-width CIs across all 15 repetitions — the synthetic frame
-   clock, already honestly flagged advisory. It is also one of the slowest
-   scenarios (frame-bound, ~2.7 s per pass). Give it `repsCap: 3`: enough to prove
-   both libraries keep up and drop nothing, without spending ~2.5 minutes a run
-   re-confirming a constant. The `repsCap` mechanism already exists from the
-   timer-isolation change.
-
----
-
 ## Sequencing
 
-1. **Item 1 (1a–1c) first.** Biggest loss, smallest diff, lowest risk — three
-   input gates and an idempotence check. Re-benchmark `update-throughput-anim-off`
-   before deciding whether 1d is needed.
-2. **Item 2.** Self-contained in `marksView.ts`; the arrow-tick row is the claim
+1. **Item 0 first, and it blocks.** The instrument has to be trustworthy before any
+   library change is measured against it. Nothing in Item 0 touches `packages/`.
+2. **Re-mint `results/baseline.json`** from a dispatched 31-repetition run once Item
+   0 has landed. This is a human step (see the rebaseline checklist in
+   `apps/bench/README.md`), and it is mandatory rather than optional: Item 0 changes
+   two headline metrics, so the existing baseline no longer describes the same
+   measurements. Remember the dispatch default is 15 repetitions — type 31.
+3. **Item 1 (1a–1c).** Biggest loss, smallest diff, lowest risk — three input gates
+   and an idempotence check. Re-benchmark `update-throughput-anim-off` before
+   deciding whether 1d is needed.
+4. **Item 2.** Self-contained in `marksView.ts`; the arrow-tick row is the claim
    quadrum's README makes about itself, so this is the one that most needs to be
    true.
-3. **Item 3.** Widest blast radius (`BoardDom`'s shape), so last — and with the
+5. **Item 3.** Widest blast radius (`BoardDom`'s shape), so last — and with the
    CSS/selector audit done up front.
-4. **Reporting fixes** can land at any point and are independent of all three;
-   fix #1 before the next published run, since it affects a headline number.
-5. Full benchmark after each item. Re-mint `results/baseline.json` via the
-   rebaseline checklist in `apps/bench/README.md` only once all three have landed
-   — and remember the dispatch default is now 15 repetitions, so type 31 for that
-   run.
+6. Full benchmark after each item, comparing against the step-2 baseline. Re-mint
+   again only once all three have landed.
+
+## What is and is not established
+
+Worth keeping straight, because this document has now been wrong in both directions:
+
+**Established, reproducible.** The update path is quadrum's real loss (~28× on
+per-iteration script, stable across two runs, and the mechanism in `Board.render()`
+is visible in the source). Mount loses purely on DOM volume, 56 elements against 42,
+with quadrum's mount *code* faster. drag, resize, bundle and heap are quadrum wins.
+Retained nodes are at parity, zero on both.
+
+**Established in direction, not in magnitude.** The arrow-tick loss — somewhere
+around 10–16×, denominator floor-bound. The Layout family generally.
+
+**Not established at all.** That any of the acceptance criteria in Items 1 and 2 can
+currently be checked. That is what Item 0 is for.

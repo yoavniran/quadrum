@@ -3,7 +3,7 @@
  */
 
 import { forceLayout, observeLongTasks } from "../core/clock";
-import { metricFromSamples } from "../core/harness";
+import { metricFromSamples, applyDiscard } from "../core/harness";
 import { ARROW_FRAMES } from "../data/arrows";
 import { INITIAL_PLACEMENT } from "quadrum";
 import type {
@@ -24,23 +24,13 @@ export const engineArrowTickScenario: Scenario = {
 		"Both mounted with drawing enabled and a static position; only the auto/engine arrow layer is replaced per tick. Neither adapter re-applies the FEN — doing so would make this measure a full position diff.",
 	endCondition:
 		"The new arrow layer is present in the DOM and laid out; the position is unchanged.",
-	// Script, not layout. Replacing the arrow layer mutates SVG children inside a
-	// fixed viewBox, so most ticks force no real layout at all and the layout
-	// metric measures whether the browser happened to do any -- quadrum's layout
-	// samples come back with a median of 0.21ms against a p95 of 0.93ms, and the
-	// bootstrap CI on that median spans 28% of it, three times the cap a gated
-	// metric is allowed. The script metric over the same samples lands inside 2%.
-	//
-	// This makes the published headline WORSE for quadrum, not better -- the
-	// layout ratio was 3.50x and the script ratio is 12.75x -- which is the point:
-	// it is the metric that actually carries the cost this scenario exists to
-	// expose, and the layout row stays in the full table either way.
-	//
-	// The spread itself is a symptom, not noise: the layer is torn down and
-	// rebuilt every tick, so some ticks land real layout work and some do not.
-	// Once that rebuild becomes a diff (docs/plans/arrow-diff-and-lazy-mount.md,
-	// item 2), the layout metric should tighten enough to headline again.
-	headlineMetric: "arrow-tick-script-ms",
+	// Total elapsed time over the whole loop, not per-iteration. Per-iteration medians
+	// on this scenario sit 3–9 ticks above the 5µs timer floor (chessground at 0.045ms
+	// / 9 ticks, quadrum higher), so the ratio is `real ÷ quantized`, swinging
+	// 9.58× → 16.00× between two identical runs against a 15% gate tolerance. The
+	// sum of 100 quantized samples cuts the relative quantization error by √100,
+	// keeping both subjects well clear of the floor and making the ratio trustworthy.
+	headlineMetric: "arrow-tick-total-script-ms",
 	defaults: { sizePx: 480, iterations: 100, warmupIterations: 2, discardFirst: 10 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {
@@ -114,6 +104,13 @@ export const engineArrowTickScenario: Scenario = {
 				},
 			];
 
+			// Sum the kept samples to get total elapsed time over the whole loop.
+			// Use the same discardFirst semantics as the per-iteration metrics.
+			const { kept: keptScript } = applyDiscard(scriptSamples, options.discardFirst);
+			const { kept: keptLayout } = applyDiscard(layoutSamples, options.discardFirst);
+			const totalScriptMs = keptScript.reduce((sum, x) => sum + x, 0);
+			const totalLayoutMs = keptLayout.reduce((sum, x) => sum + x, 0);
+
 			const metrics: Metric[] = [
 				metricFromSamples("arrow-tick-layout-ms", "Layout", layoutSamples, {
 					unit: "ms",
@@ -127,6 +124,20 @@ export const engineArrowTickScenario: Scenario = {
 					statistic: "median",
 					discardFirst: options.discardFirst,
 				}),
+				{
+					key: "arrow-tick-total-script-ms",
+					label: "Total script",
+					unit: "ms",
+					direction: "lower",
+					value: totalScriptMs,
+				},
+				{
+					key: "arrow-tick-total-layout-ms",
+					label: "Total layout",
+					unit: "ms",
+					direction: "lower",
+					value: totalLayoutMs,
+				},
 				{
 					key: "arrow-tick-longtask-ms",
 					label: "Long tasks",

@@ -29,6 +29,9 @@ export const updateAnimOnScenario: Scenario = {
 	endCondition:
 		"All updates dispatched and one further frame has been painted.",
 	headlineMetric: "frame-interval-p95",
+	// Identical values with zero-width CIs across 31 repetitions means three passes prove
+	// the same thing — both libraries keep up and drop nothing — at a twelfth of the cost.
+	repsCap: 3,
 	defaults: { sizePx: 480, iterations: 100, warmupIterations: 1, discardFirst: 10 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {

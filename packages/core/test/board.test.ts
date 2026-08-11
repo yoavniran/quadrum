@@ -468,4 +468,42 @@ describe("board", () => {
 
 		expect(board.state().selected).toBeNull();
 	});
+
+	it("interrupting an animation does not leak the faded piece elements", () => {
+		const board = createBoard(container, {
+			position: "8/8/8/8/8/8/8/4K2r",
+			animate: { enabled: true, duration: 200 },
+		});
+
+		// Each capture clones the captured piece into a .vanishing element that the
+		// animation's own cleanup removes when it finishes. Updating faster than the
+		// duration cancels the animation every time, so without cleanup-on-cancel
+		// every clone stays in the DOM for the life of the board.
+		for (let i = 0; i < 10; i++) {
+			board.update({ position: i % 2 === 0 ? "8/8/8/8/8/8/8/7K" : "8/8/8/8/8/8/8/4K2r" });
+		}
+
+		expect(container.querySelectorAll(".vanishing").length).toBe(0);
+		expect(container.querySelectorAll("qd-piece").length).toBe(
+			board.state().pieces.size,
+		);
+	});
+
+	it("interrupting an animation leaves no piece stuck mid-transition", () => {
+		const board = createBoard(container, {
+			position: "8/8/8/8/8/8/8/4K3",
+			animate: { enabled: true, duration: 200 },
+		});
+
+		// The rook appears (opacity driven from 0, class "appearing"). The second
+		// update adds a knight elsewhere and leaves the rook exactly where it is,
+		// so the rook's own element survives -- and without cleanup-on-cancel it
+		// keeps the appear state of an animation that never finished.
+		board.update({ position: "8/8/8/8/8/8/8/4K2R" });
+		const rook = container.querySelector('qd-piece[data-square="h1"]');
+		board.update({ position: "1n6/8/8/8/8/8/8/4K2R" });
+
+		expect(container.querySelector('qd-piece[data-square="h1"]')).toBe(rook);
+		expect(rook?.classList.contains("appearing")).toBe(false);
+	});
 });

@@ -1,0 +1,264 @@
+name: Benchmarks
+
+# quadrum vs chessground, measured rather than asserted. Its own workflow rather
+# than a job in ci.yml: ci.yml's stated contract is "quality gate for every
+# change" with every job cheap and deterministic, and a benchmark that can
+# legitimately return *inconclusive* does not belong to that. It also needs a
+# schedule, a workflow_dispatch and a paths filter that ci.yml's other jobs must
+# not inherit.
+#
+# What runs when:
+#
+#   PR touching packages/*/src, apps/bench or the report scripts
+#     -> blocking, gated scenarios only
+#   push to main
+#     -> blocking, gated scenarios only
+#   nightly
+#     -> all 8 scenarios, publishable, never blocks, opens a refresh PR
+#   workflow_dispatch
+#     -> full run at high repetitions, for minting a baseline
+#
+# Methodology, the gate rules and the rebaseline checklist: apps/bench/README.md
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "packages/*/src/**"
+      - "apps/bench/**"
+      - ".github/workflows/bench.yml"
+      - ".github/scripts/bench-*.mjs"
+      - ".github/scripts/write-bench-report.mjs"
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/*/src/**"
+      - "apps/bench/**"
+      - ".github/workflows/bench.yml"
+      - ".github/scripts/bench-*.mjs"
+      - ".github/scripts/write-bench-report.mjs"
+  schedule:
+    # 03:17 UTC. Off the hour on purpose -- the top of the hour is the busiest
+    # slot on shared runners, and a noisy neighbour is measurement error here.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      repetitions:
+        description: "Repetitions (31 when minting a baseline)"
+        required: false
+        default: "31"
+
+permissions:
+  contents: read
+
+concurrency:
+  # Cancels superseded PR runs, but never a scheduled one: a half-measured
+  # nightly is worse than a late one, and the nightly is what feeds the README.
+  group: bench-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Fails a PR that updates the gate baseline in the same change as library
+  # source. That single diff is invisible to every other check in the repo,
+  # because the new baseline is what the gate compares against.
+  guard-baseline:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Collect the changed files
+        run: git diff --name-only "origin/${{ github.base_ref }}"...HEAD > changed-files.txt
+
+      - name: Guard the baseline
+        env:
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: node .github/scripts/write-bench-report.mjs guard-baseline --files changed-files.txt
+
+  # Regenerates the README's headline block from the committed results and fails
+  # if it differs. This is what makes a hand-edited number break the build: a
+  # figure that is not in the JSON cannot survive here. Also fails once the
+  # published numbers pass 120 days old.
+  #
+  # No-ops until the first nightly run commits a results file -- there is nothing
+  # to check against before that, and a check that fails for lack of data teaches
+  # people to ignore it.
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Check the README against the published results
+        run: |
+          if [ ! -f apps/bench/results/latest.json ]; then
+            echo "No published run committed yet; nothing to check."
+            exit 0
+          fi
+          node .github/scripts/write-bench-report.mjs check \
+            apps/bench/results/latest.json --readme README.md
+
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build the benchmark app
+        run: pnpm --filter quadrum-bench build
+
+      # BENCH_TRIGGER is what decides `publishable` in the record, and the
+      # renderer throws on a non-publishable run. PR runs are noisy and
+      # re-runnable, so they can never reach the README.
+      - name: Run the benchmarks
+        env:
+          BENCH_TRIGGER: ${{ github.event_name }}
+        run: |
+          # No `--` before the flags: `pnpm run` forwards it verbatim through the
+          # nested workspace script, so the runner would receive a bare `--` as
+          # its first argument.
+          if [ "${{ github.event_name }}" = "pull_request" ] || [ "${{ github.event_name }}" = "push" ]; then
+            pnpm bench --scenario gated --runs 7
+          else
+            pnpm bench --runs "${{ github.event.inputs.repetitions || 15 }}"
+          fi
+
+      # always(): the raw JSON is the evidence, and it is most wanted precisely
+      # when the run failed.
+      - name: Upload the raw results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bench-results-${{ github.run_id }}
+          path: apps/bench/results/
+          retention-days: 30
+
+      - name: Gate against the baseline
+        id: gate
+        env:
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          PR_ACTOR: ${{ github.actor }}
+        run: |
+          # Until a baseline is minted from a workflow_dispatch run on main
+          # (see the rebaseline checklist in apps/bench/README.md), there is
+          # nothing to compare against. The run still happens and still uploads
+          # its evidence -- it just cannot return a verdict yet.
+          if [ ! -f apps/bench/results/baseline.json ]; then
+            echo "::notice::No baseline committed yet; skipping the gate. Mint one with a workflow_dispatch run at 31 repetitions."
+            exit 0
+          fi
+          node .github/scripts/write-bench-report.mjs gate \
+            apps/bench/results/latest.json \
+            apps/bench/results/baseline.json
+
+      # Paid only on failure, and it removes the incentive to hit "re-run job" --
+      # which is itself a laundering vector. Only the scenarios that failed are
+      # re-measured, in a fresh context at higher repetitions, and the gate is
+      # only red if the second pass agrees.
+      - name: Confirm a failure before believing it
+        if: failure() && steps.gate.outcome == 'failure'
+        env:
+          BENCH_TRIGGER: ${{ github.event_name }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          PR_ACTOR: ${{ github.actor }}
+        run: |
+          echo "::notice::Gate failed; re-measuring the gated scenarios at 25 repetitions to confirm."
+          pnpm bench --scenario gated --runs 25 --out results/confirm.json
+          node .github/scripts/write-bench-report.mjs gate \
+            apps/bench/results/confirm.json \
+            apps/bench/results/baseline.json
+
+      - name: Write the full report to the step summary
+        if: always()
+        run: |
+          node .github/scripts/write-bench-report.mjs summarize \
+            apps/bench/results/latest.json >> "$GITHUB_STEP_SUMMARY" || true
+
+  # Schedule only. The nightly is the only run whose numbers may reach the
+  # README, and even then a human merges the PR.
+  publish:
+    needs: bench
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Download the results
+        uses: actions/download-artifact@v8
+        with:
+          name: bench-results-${{ github.run_id }}
+          path: apps/bench/results/
+
+      # Throws on a non-publishable run, on a stale run, and on missing markers.
+      - name: Splice the headline block into the README
+        run: |
+          node .github/scripts/write-bench-report.mjs publish \
+            apps/bench/results/latest.json --readme README.md
+
+      - name: Open the refresh PR
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: bench/refresh-numbers
+          title: "docs: refresh the published benchmark numbers"
+          commit-message: "docs: refresh the published benchmark numbers"
+          add-paths: |
+            README.md
+            apps/bench/results/latest.json
+          body: |
+            Generated by the nightly benchmark run.
+
+            Every number here comes from `apps/bench/results/latest.json` and the block is
+            regenerated, never hand-edited — a CI drift check fails if the README and the JSON
+            disagree. Review the ratios, not the absolute milliseconds: those move with the
+            runner.
+
+            Methodology: `apps/bench/README.md`.

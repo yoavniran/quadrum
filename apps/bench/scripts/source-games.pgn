@@ -1,0 +1,62 @@
+[Event "Hoogovens"]
+[Site "Wijk aan Zee"]
+[Date "1999.01.20"]
+[Round "4"]
+[White "Kasparov, Gary"]
+[Black "Topalov, Veselin"]
+[Result "1-0"]
+[WhiteElo "2812"]
+[BlackElo "2700"]
+[ECO "B07"]
+
+1.e4 d6 2.d4 Nf6 3.Nc3 g6 4.Be3 Bg7 5.Qd2 c6 6.f3 b5 7.Nge2 Nbd7 8.Bh6 Bxh6
+9.Qxh6 Bb7 10.a3 e5 11.O-O-O Qe7 12.Kb1 a6 13.Nc1 O-O-O 14.Nb3 exd4 15.Rxd4 c5
+16.Rd1 Nb6 17.g3 Kb8 18.Na5 Ba8 19.Bh3 d5 20.Qf4+ Ka7 21.Rhe1 d4 22.Nd5 Nbxd5
+23.exd5 Qd6 24.Rxd4 cxd4 25.Re7+ Kb6 26.Qxd4+ Kxa5 27.b4+ Ka4 28.Qc3 Qxd5
+29.Ra7 Bb7 30.Rxb7 Qc4 31.Qxf6 Kxa3 32.Qxa6+ Kxb4 33.c3+ Kxc3 34.Qa1+ Kd2
+35.Qb2+ Kd1 36.Bf1 Rd2 37.Rd7 Rxd7 38.Bxc4 bxc4 39.Qxh8 Rd3 40.Qa8 c3 41.Qa4+ Ke1
+42.f4 f5 43.Kc1 Rd2 44.Qa7  1-0
+
+
+[Event "It"]
+[Site "Astana KAZ"]
+[Date "2001.05.29"]
+[Round "8"]
+[White "Kasparov,G"]
+[Black "Morozevich,A"]
+[Result "1/2-1/2"]
+[WhiteElo "2827"]
+[BlackElo "2749"]
+[ECO "D17"]
+
+1.d4 d5 2.c4 c6 3.Nf3 Nf6 4.Nc3 dxc4 5.a4 Bf5 6.Ne5 Nbd7 7.Nxc4 Nd5 8.g3 e5
+9.Bg2 exd4 10.Qxd4 Qf6 11.Qxf6 N7xf6 12.Nxd5 cxd5 13.Ne3 Be6 14.O-O Bc5 15.Rd1 O-O
+16.Nxd5 Nxd5 17.Bxd5 Rad8 18.e4 Bxd5 19.exd5 Rd7 20.Rb1 a5 21.d6 Rfd8 22.Rd5 b6
+23.Bf4 f6 24.Rbd1 Kf7 25.Kg2 Ke6 26.Kf3 g6 27.g4 Bxd6 28.h4 Bxf4 29.Rxd7 Rxd7
+30.Rxd7 Kxd7 31.Kxf4 Kd6 32.Ke4 Kc5 33.f4 Kb4 34.f5 gxf5+ 35.Kxf5 Kxa4 36.Kxf6 Kb3
+37.Kg7 Kxb2 38.Kxh7 a4 39.g5 a3 40.g6 a2 41.g7 a1=Q 42.g8=Q Qb1+ 43.Qg6 b5  1/2-1/2
+
+
+[Event "World Championship 35th-KK5"]
+[Site "Lyon/New York"]
+[Date "1990.??.??"]
+[Round "21"]
+[White "Karpov, Anatoly"]
+[Black "Kasparov, Gary"]
+[Result "1/2-1/2"]
+[WhiteElo "2730"]
+[BlackElo "2800"]
+[ECO "E87"]
+
+1.d4 Nf6 2.c4 g6 3.Nc3 Bg7 4.e4 d6 5.f3 O-O 6.Be3 e5 7.d5 Nh5 8.Qd2 f5 9.O-O-O a6
+10.Bd3 c5 11.dxc6 Nxc6 12.Nd5 Be6 13.Bb6 Qd7 14.Ne2 Rac8 15.Kb1 Qf7 16.Rhe1 Kh8
+17.Bc2 Nf6 18.Bd3 Nd7 19.Bg1 Nc5 20.Nb6 Rcd8 21.Nc3 Nd4 22.Ncd5 Bxd5 23.Nxd5 fxe4
+24.fxe4 b5 25.Rf1 Qd7 26.cxb5 axb5 27.Rxf8+ Rxf8 28.h3 Qd8 29.Bxd4 exd4 30.Qe2 Qh4
+31.Rf1 Re8 32.Rf4 Qg5 33.a3 h5 34.Ka2 b4 35.axb4 Ra8+ 36.Kb1 Nb3 37.Kc2 Na1+
+38.Kb1 Nb3 39.Qf2 Qd8 40.Rf7 Qe8 41.b5 Ra1+ 42.Kc2 Nc5 43.Rxg7 Kxg7 44.Qxd4+ Qe5
+45.Qxe5+ dxe5 46.b6 Rg1 47.Ne3 Re1 48.Nc4 Rg1 49.Ne3 Re1 50.Nc4 Rg1 51.b4 Rxg2+
+52.Kc3 Na4+ 53.Kb3 Nxb6 54.Nxb6 Rg3 55.Kc3 Rxh3 56.b5 h4 57.Nc4 Rxd3+ 58.Kxd3 h3
+59.b6 h2 60.b7 h1=Q 61.b8=Q Qf1+ 62.Kc3 Qc1+ 63.Kb3 Qd1+ 64.Ka2 Qa4+ 65.Na3 Qxe4
+66.Qc7+ Kh6 67.Nc4 Qd5 68.Kb2 e4 69.Qf4+ Kg7 70.Kc3 Qd3+ 71.Kb4 Qd4 72.Qh4 Kf7
+73.Kb5 Qd5+ 74.Kb4 Qd4 75.Qh7+ Qg7 76.Qh1 Qd4 77.Qh4 Kg8 78.Qf4 Kg7 79.Qc1 Kf6
+80.Kb5 Qd5+ 81.Kb4 Qd4 82.Kb5 Qd5+ 83.Kb6 Qd4+ 84.Kc6 Ke6 85.Ne3 Qa4+ 86.Kb6 Qb4+  1/2-1/2

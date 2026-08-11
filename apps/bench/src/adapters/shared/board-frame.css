@@ -1,0 +1,27 @@
+/**
+ * Give both board libraries a byte-identical box so no geometry difference can
+ * leak into a timing difference. Both quadrum (.qd-wrap) and chessground
+ * (.cg-wrap) fill their host container and require a fixed size.
+ */
+
+.bench-frame,
+.bench-frame *,
+.bench-frame *::before,
+.bench-frame *::after {
+	box-sizing: border-box;
+}
+
+.bench-frame {
+	position: relative;
+	display: block;
+	width: var(--bench-size, 480px);
+	height: var(--bench-size, 480px);
+	flex: none;
+	overflow: hidden;
+	background: #f0d9b5;
+}
+
+.bench-frame > * {
+	width: 100%;
+	height: 100%;
+}

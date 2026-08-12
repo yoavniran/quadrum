@@ -229,6 +229,12 @@ async function main() {
 				warmups: 1,
 				order: "interleaved-abba",
 				freshContextPerRepetition: true,
+				// What this run was asked to measure. The gate needs it to tell a
+				// scenario that was deliberately out of scope from one that went
+				// missing -- without it, every `--scenario gated` run (which is
+				// every PR, every push, and the confirm step) fails on the
+				// non-gated scenarios before measuring anything.
+				scenarioSelector: opts.scenario,
 			},
 			scenarioMeta,
 			scenarios: allRuns,

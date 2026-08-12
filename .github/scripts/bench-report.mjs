@@ -514,6 +514,43 @@ export function makeBaseline(summary) {
 }
 
 /**
+ * The baseline scenarios a given run was actually asked to measure.
+ *
+ * The gate fails a scenario that is in the baseline but absent from the results,
+ * because deleting an inconvenient benchmark is otherwise invisible to every
+ * check in the repo. That rule is right for a full run and wrong for a subset
+ * one: `--scenario gated` is what every PR, every push and the confirm step run,
+ * and under a blanket rule each of those fails on the three non-gated scenarios
+ * before it has measured anything -- a red X that says nothing about the code.
+ *
+ * Scope is computed from the **baseline's** gated flags, never the results',
+ * which keeps the anti-deletion property intact and tightens it: a scenario that
+ * quietly stops being gated in the registry is still in scope here, so it cannot
+ * un-gate itself out of the comparison.
+ *
+ * A record with no selector (schemaVersion 1 wrote none) is treated as a full
+ * run, so an older results file gates exactly as it did before.
+ *
+ * @param {any} summary
+ * @param {any} baseline
+ * @returns {Set<string>}
+ */
+export function scenariosInScope(summary, baseline) {
+	const ids = Object.keys(baseline.scenarios ?? {});
+	const selector = summary.config?.scenarioSelector ?? "all";
+
+	if (selector === "all") {
+		return new Set(ids);
+	}
+
+	if (selector === "gated") {
+		return new Set(ids.filter((id) => baseline.scenarios[id]?.gated));
+	}
+
+	return new Set(ids.filter((id) => id === selector));
+}
+
+/**
  * Apply the regression rules. Pure: returns verdicts, never exits.
  *
  * The comparison is ratio-based (quadrum / chessground) because the runner's
@@ -550,16 +587,30 @@ export function compareToBaseline(summary, baseline, options = {}) {
 	const results = [];
 	const byId = new Map(summary.scenarios.map((scenario) => [scenario.id, scenario]));
 
-	// A scenario present in the baseline but missing from the results fails.
-	// Deleting an inconvenient benchmark is otherwise invisible to every check.
+	// A scenario this run was asked to measure, present in the baseline and
+	// missing from the results, fails: deleting an inconvenient benchmark is
+	// otherwise invisible to every check. One the run was never asked for is
+	// reported as skipped, so a subset run's coverage is still on the record.
+	const inScope = scenariosInScope(summary, baseline);
+
 	for (const id of Object.keys(baseline.scenarios ?? {})) {
-		if (!byId.has(id) || !byId.get(id).measured) {
-			results.push({
-				scenarioId: id,
-				status: "fail",
-				reason: "scenario is in the baseline but missing from the results",
-			});
+		if (byId.has(id) && byId.get(id).measured) {
+			continue;
 		}
+
+		results.push(
+			inScope.has(id)
+				? {
+						scenarioId: id,
+						status: "fail",
+						reason: "scenario is in the baseline but missing from the results",
+					}
+				: {
+						scenarioId: id,
+						status: "skipped",
+						reason: `not measured: this run selected "${summary.config?.scenarioSelector ?? "all"}"`,
+					},
+		);
 	}
 
 	for (const scenario of summary.scenarios) {
@@ -929,6 +980,7 @@ const STATUS_ICON = {
 	inconclusive: "➖",
 	advisory: "ℹ️",
 	reported: "📊",
+	skipped: "⏭️",
 };
 
 /**

@@ -248,6 +248,107 @@ describe("compareToBaseline", () => {
 		expect(gate.ok).toBe(false);
 	});
 
+	describe("subset runs", () => {
+		// `--scenario gated` is what every PR, every push and the confirm step
+		// run. Under a blanket missing-scenario rule each of those goes red on the
+		// non-gated scenarios before measuring anything -- which is what happened
+		// on the 2026-08-11 dispatch: the confirm step reported
+		// update-throughput-anim-on, drag-latency and resize-storm as "missing".
+		const mixed = baseline({
+			mount: {
+				headlineMetric: "m",
+				gated: true,
+				unit: "ms",
+				direction: "lower",
+				ratio: 0.7,
+				ratioCi95: [0.65, 0.75],
+				quadrum: { median: 7, ci95: [6.8, 7.2] },
+				chessground: { median: 10, ci95: [9.8, 10.2] },
+			},
+			"drag-latency": {
+				headlineMetric: "m",
+				gated: false,
+				unit: "ms",
+				direction: "lower",
+				ratio: 0.88,
+				ratioCi95: [0.85, 0.91],
+				quadrum: { median: 1.99, ci95: [1.98, 2.0] },
+				chessground: { median: 2.26, ci95: [2.25, 2.27] },
+			},
+		});
+
+		const gatedOnly = (scenarios) =>
+			compareToBaseline(
+				summary(scenarios, {
+					config: { repetitions: 7, warmups: 1, order: "interleaved-abba", freshContextPerRepetition: true, scenarioSelector: "gated" },
+				}),
+				mixed,
+			);
+
+		const passingMount = () =>
+			scenario({
+				metrics: [
+					metric({
+						quadrum: { median: 7, ci95: [6.9, 7.1] },
+						chessground: { median: 10, ci95: [9.9, 10.1] },
+					}),
+				],
+			});
+
+		it("skips, rather than fails, a non-gated scenario a gated run never asked for", () => {
+			const gate = gatedOnly([passingMount()]);
+
+			expect(statusOf(gate, "drag-latency")).toBe("skipped");
+			expect(statusOf(gate, "mount")).toBe("pass");
+			expect(gate.ok).toBe(true);
+		});
+
+		it("still fails a gated scenario missing from a gated run", () => {
+			// The anti-deletion rule has to survive the fix, or the fix is a hole.
+			const gate = gatedOnly([]);
+
+			expect(statusOf(gate, "mount")).toBe("fail");
+			expect(gate.ok).toBe(false);
+		});
+
+		it("takes scope from the baseline's gated flags, not the results'", () => {
+			// A scenario that quietly stops being gated in the registry must not be
+			// able to un-gate itself out of the comparison.
+			const gate = gatedOnly([passingMount(), scenario({ id: "drag-latency", gated: false, measured: false, metrics: [] })]);
+
+			expect(statusOf(gate, "drag-latency")).toBe("skipped");
+
+			const stillGated = compareToBaseline(
+				summary([scenario({ id: "mount", gated: false, measured: false, metrics: [] })], {
+					config: { repetitions: 7, warmups: 1, order: "interleaved-abba", freshContextPerRepetition: true, scenarioSelector: "gated" },
+				}),
+				mixed,
+			);
+
+			expect(statusOf(stillGated, "mount")).toBe("fail");
+		});
+
+		it("scopes a single-scenario run to that scenario alone", () => {
+			const gate = compareToBaseline(
+				summary([passingMount()], {
+					config: { repetitions: 7, warmups: 1, order: "interleaved-abba", freshContextPerRepetition: true, scenarioSelector: "mount" },
+				}),
+				mixed,
+			);
+
+			expect(statusOf(gate, "drag-latency")).toBe("skipped");
+			expect(gate.ok).toBe(true);
+		});
+
+		it("treats a record with no selector as a full run", () => {
+			// schemaVersion 1 wrote no selector; those files must gate as before.
+			const gate = compareToBaseline(summary([passingMount()]), mixed);
+
+			expect(statusOf(gate, "drag-latency")).toBe("fail");
+			expect(gate.ok).toBe(false);
+		});
+	});
+
 	it("treats a scenario absent from the baseline as advisory", () => {
 		const gate = compareToBaseline(
 			summary([

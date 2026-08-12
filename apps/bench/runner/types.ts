@@ -66,6 +66,13 @@ export interface RunRecord {
 		readonly warmups: number;
 		readonly order: "interleaved-abba";
 		readonly freshContextPerRepetition: boolean;
+		/**
+		 * `--scenario` as it was passed: "all", "gated", or a single id. The gate
+		 * needs it to tell a scenario that was deliberately out of scope from one
+		 * that went missing. Optional because schemaVersion 1 records written
+		 * before this field exist, and are read as full runs.
+		 */
+		readonly scenarioSelector?: string;
 	};
 	/**
 	 * Scenario definitions as the page reported them, including the parity and

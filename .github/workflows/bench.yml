@@ -132,6 +132,11 @@ jobs:
 
   bench:
     runs-on: ubuntu-latest
+    outputs:
+      # Read by mint-baseline, which runs even when the gate went red -- so the
+      # baseline PR can state plainly that the run it was minted from failed
+      # against the baseline it replaces.
+      gate: ${{ steps.gate.outcome }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -189,6 +194,13 @@ jobs:
 
       - name: Gate against the baseline
         id: gate
+        # The nightly is documented as "never blocks" -- it is a report that feeds
+        # the README, and the publish job needs this job green to run at all. Left
+        # blocking, a stale baseline stops the published numbers refreshing, which
+        # is the opposite of what the nightly is for. The verdict is still
+        # computed, still printed and still in `outcome`; it just does not fail
+        # the job on a schedule.
+        continue-on-error: ${{ github.event_name == 'schedule' }}
         env:
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
           PR_ACTOR: ${{ github.actor }}
@@ -297,7 +309,17 @@ jobs:
   # has nothing to diff against.
   mint-baseline:
     needs: bench
-    if: github.event_name == 'workflow_dispatch' && inputs.mint_baseline
+    # `!cancelled()` rather than `success()`, deliberately. Minting is how a
+    # baseline that no longer describes the measurement gets replaced -- and a
+    # baseline in that state is exactly one whose gate is red. Gating minting on a
+    # green gate makes the two conditions circular: the only run that may mint is
+    # one that did not need to.
+    #
+    # It is not a laundering route. The mint still opens a PR a human merges, the
+    # gate verdict is carried into that PR's body below, and the `bench-rebaseline`
+    # label rule still fails any baseline change that rides along with library
+    # source. What this removes is a deadlock, not a review.
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.mint_baseline }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -344,6 +366,12 @@ jobs:
           body: |
             Minted from the `workflow_dispatch` run that requested it. Merging this changes what
             every later benchmark run is gated against, so it is a review, not a formality.
+
+            Gate verdict of the run this was minted from, measured against the baseline it
+            replaces: **${{ needs.bench.outputs.gate }}**. A `failure` there is not a reason to
+            skip the review — it is the reason to do it. Either the old baseline stopped
+            describing the measurement (mint), or something genuinely regressed (do not mint,
+            fix it). The step summary of run ${{ github.run_id }} says which scenarios failed.
 
             Before approving, work through the rebaseline checklist in `apps/bench/README.md`:
 

@@ -39,6 +39,7 @@ import {
 	spliceMarkers,
 	checkFreshness,
 	guardBaselineChange,
+	remeasurableFailures,
 	OVERRIDE_LABEL,
 } from "./bench-report.mjs";
 
@@ -95,6 +96,21 @@ function stepSummary(markdown) {
 	}
 }
 
+/**
+ * Publish a step output. Written before any non-zero exit, because a failing
+ * step's outputs are still collected and the confirm step depends on one.
+ *
+ * @param {string} name
+ * @param {string} value
+ */
+function stepOutput(name, value) {
+	const target = process.env.GITHUB_OUTPUT;
+
+	if (target) {
+		appendFileSync(target, `${name}=${value}\n`);
+	}
+}
+
 /** @param {string} message */
 function fail(message) {
 	console.error(`✖ ${message}`);
@@ -138,10 +154,25 @@ if (mode === "summarize") {
 	// confirm-run step can re-measure only those, rather than re-running (and
 	// thereby re-rolling) the whole suite.
 	const failed = gate.results.filter((r) => r.status === "fail").map((r) => r.scenarioId);
+	// Only the failures a second measurement could overturn are worth the
+	// confirmation run. A stale baseline reprints the same sentence whatever the
+	// browser does, and the workflow reads this to skip that.
+	const confirmable = remeasurableFailures(gate);
 
 	if (failed.length > 0) {
 		console.log(`\nfailed-scenarios=${failed.join(",")}`);
+		console.log(`confirmable-scenarios=${confirmable.join(",")}`);
+
+		if (confirmable.length === 0) {
+			console.log(
+				"\nNo failure here can be changed by re-measuring: the results and the " +
+					"baseline disagree about which metrics exist, which is settled without a " +
+					"browser. Skipping the confirmation run. Re-mint the baseline.",
+			);
+		}
 	}
+
+	stepOutput("confirmable", confirmable.length > 0 ? "true" : "false");
 
 	if (!gate.ok) {
 		process.exit(1);

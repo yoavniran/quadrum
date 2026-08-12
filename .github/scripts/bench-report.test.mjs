@@ -11,6 +11,7 @@ import {
 	formatValue,
 	escapeCell,
 	guardBaselineChange,
+	remeasurableFailures,
 	formatRatio,
 	SCHEMA_VERSION,
 	TIMER_RESOLUTION_MS,
@@ -1500,5 +1501,170 @@ describe("makeBaseline validation", () => {
 
 		expect(stored.statistic).toBe("median");
 		expect(stored.quadrum.median).toBe(0.5);
+	});
+});
+
+describe("remeasurableFailures", () => {
+	const base = baseline({
+		mount: {
+			headlineMetric: "m",
+			gated: true,
+			unit: "ms",
+			direction: "lower",
+			ratio: 0.7,
+			ratioCi95: [0.65, 0.75],
+			quadrum: { median: 7, ci95: [6.8, 7.2] },
+			chessground: { median: 10, ci95: [9.8, 10.2] },
+		},
+	});
+
+	/** @param {object} overrides */
+	const mountScenario = (overrides) =>
+		scenario({
+			metrics: [
+				metric({
+					key: "m",
+					quadrum: { median: 7, ci95: [6.8, 7.2] },
+					chessground: { median: 10, ci95: [9.8, 10.2] },
+				}),
+			],
+			...overrides,
+		});
+
+	it("returns nothing for a stale baseline, because no browser can change that answer", () => {
+		// The 2026-08-12 PR run spent six minutes re-measuring this exact failure
+		// and reprinted the same sentence. The gate stays red either way -- this
+		// only decides whether a second measurement could inform the verdict.
+		const gate = compareToBaseline(
+			summary([
+				mountScenario({
+					headlineMetric: "total-script",
+					metrics: [
+						metric({
+							key: "m",
+							quadrum: { median: 0.46, ci95: [0.45, 0.47] },
+							chessground: { median: 0.02, ci95: [0.02, 0.02] },
+						}),
+						metric({
+							key: "total-script",
+							quadrum: { median: 7, ci95: [6.8, 7.2] },
+							chessground: { median: 10, ci95: [9.8, 10.2] },
+						}),
+					],
+				}),
+			]),
+			base,
+			{},
+		);
+
+		expect(statusOf(gate, "mount")).toBe("fail");
+		expect(gate.ok).toBe(false);
+		expect(remeasurableFailures(gate)).toEqual([]);
+	});
+
+	it("returns nothing when the baseline's metric is absent from the results", () => {
+		// Same shape: the two files disagree about which metrics exist, which is
+		// settled in git rather than in a browser.
+		const gate = compareToBaseline(
+			summary([
+				mountScenario({
+					headlineMetric: "other",
+					metrics: [
+						metric({
+							key: "other",
+							quadrum: { median: 7, ci95: [6.8, 7.2] },
+							chessground: { median: 10, ci95: [9.8, 10.2] },
+						}),
+					],
+				}),
+			]),
+			base,
+			{},
+		);
+
+		expect(statusOf(gate, "mount")).toBe("fail");
+		expect(remeasurableFailures(gate)).toEqual([]);
+	});
+
+	it("returns nothing when a baselined scenario is missing from the results", () => {
+		const gate = compareToBaseline(summary([]), base, {});
+
+		expect(statusOf(gate, "mount")).toBe("fail");
+		expect(remeasurableFailures(gate)).toEqual([]);
+	});
+
+	it("returns a genuine regression, which is exactly what the second run exists to check", () => {
+		const gate = compareToBaseline(
+			summary([
+				mountScenario({
+					metrics: [
+						metric({
+							key: "m",
+							quadrum: { median: 30, ci95: [29, 31] },
+							chessground: { median: 10, ci95: [9.8, 10.2] },
+						}),
+					],
+				}),
+			]),
+			base,
+			{},
+		);
+
+		expect(statusOf(gate, "mount")).toBe("fail");
+		expect(remeasurableFailures(gate)).toEqual(["mount"]);
+	});
+
+	it("returns only the regression when a stale scenario fails alongside it", () => {
+		// The confirmation run re-measures the scenarios it names, so a drifted
+		// scenario must not be dragged along by a real regression in another one.
+		const twoScenarios = baseline({
+			mount: base.scenarios.mount,
+			update: { ...base.scenarios.mount },
+		});
+		const gate = compareToBaseline(
+			summary([
+				mountScenario({
+					metrics: [
+						metric({
+							key: "m",
+							quadrum: { median: 30, ci95: [29, 31] },
+							chessground: { median: 10, ci95: [9.8, 10.2] },
+						}),
+					],
+				}),
+				mountScenario({
+					id: "update",
+					headlineMetric: "total-script",
+					metrics: [
+						metric({
+							key: "total-script",
+							quadrum: { median: 7, ci95: [6.8, 7.2] },
+							chessground: { median: 10, ci95: [9.8, 10.2] },
+						}),
+					],
+				}),
+			]),
+			twoScenarios,
+			{},
+		);
+
+		expect(statusOf(gate, "mount")).toBe("fail");
+		expect(statusOf(gate, "update")).toBe("fail");
+		expect(remeasurableFailures(gate)).toEqual(["mount"]);
+	});
+
+	it("gives an unrecognised failure kind the benefit of the doubt", () => {
+		// Opt-out, not opt-in: a failure branch added later without thinking about
+		// this should keep its second chance rather than silently lose it.
+		const gate = {
+			results: [
+				{ scenarioId: "novel", status: "fail" },
+				{ scenarioId: "structural", status: "fail", remeasurable: false },
+				{ scenarioId: "warned", status: "warn" },
+				{ scenarioId: "fine", status: "pass" },
+			],
+		};
+
+		expect(remeasurableFailures(gate)).toEqual(["novel"]);
 	});
 });

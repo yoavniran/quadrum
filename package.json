@@ -16,6 +16,8 @@
     "test:e2e:ui": "playwright test --ui",
     "bench": "pnpm --filter quadrum-bench bench",
     "bench:quick": "pnpm --filter quadrum-bench bench:quick",
+    "bench:gate": "node .github/scripts/write-bench-report.mjs gate",
+    "bench:summarize": "node .github/scripts/write-bench-report.mjs summarize",
     "changeset": "changeset",
     "release": "pnpm build && changeset publish",
     "prepare": "husky"

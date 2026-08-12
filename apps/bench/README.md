@@ -241,6 +241,36 @@ All the decisions live in `.github/scripts/bench-report.mjs`, which is pure and 
 `write-bench-report.mjs` does the I/O. So "would this gate have passed?" is always answerable from
 a JSON file, with no browser and no CI.
 
+### Replaying a failed gate instead of re-running the benchmark
+
+A full 31-repetition run costs over 40 minutes. Almost none of that is needed to test a change to
+the gate or the report, because **the gate is a pure function of two JSON files** — it never opens
+a browser. When CI reports a gate failure, the fix loop is:
+
+```sh
+gh run download <run-id> -n bench-results-<run-id>   # every run uploads its raw JSON
+pnpm bench:gate <downloaded>/latest.json apps/bench/results/baseline.json
+```
+
+That reproduces CI's verdict, exactly, in about half a minute. Iterate against it until it says
+what you expect, and only then spend a real run. `pnpm bench:summarize <file>` does the same for
+the rendered report.
+
+There is also a real 31-repetition results file committed at `results/baseline-run.json` — the run
+the current baseline was minted from. It is the fixture to develop against when you have no failing
+run in hand:
+
+```sh
+pnpm bench:gate apps/bench/results/baseline-run.json apps/bench/results/baseline.json
+```
+
+Two supporting facts, both of which used to make this loop impractical and no longer do. The
+bootstrap CI in `bench-stats.mjs` resamples 2000 times per metric per subject; it now does that by
+selection over a reused buffer rather than by sorting a fresh array, which took a replay from 3m18s
+to about 26s. And `apps/bench/test/baseline-sync.test.ts` checks in milliseconds, on every PR, that
+the committed baseline still gates the metric each scenario actually headlines — the drift that
+otherwise only surfaces 40 minutes into a run, and that no source change can fix.
+
 ---
 
 ## The regression gate

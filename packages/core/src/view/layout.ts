@@ -1,4 +1,5 @@
 import type { BoardState } from "../options";
+import type { Color } from "../types";
 
 export interface BoardDom {
 	wrap: HTMLElement;
@@ -14,6 +15,13 @@ export interface BoardDom {
 	files: HTMLElement;
 	overlay: HTMLElement;
 }
+
+interface CoordsMemo {
+	orientation: Color;
+	coordinates: boolean;
+}
+
+const coordsMemos = new WeakMap<BoardDom, CoordsMemo>();
 
 export function buildDom(container: HTMLElement): BoardDom {
 	container.innerHTML = "";
@@ -53,31 +61,47 @@ export function buildDom(container: HTMLElement): BoardDom {
 }
 
 export function renderCoords(dom: BoardDom, state: BoardState): void {
-	dom.ranks.innerHTML = "";
-	dom.files.innerHTML = "";
+	const memo = coordsMemos.get(dom);
 
-	const rankLabels = state.orientation === "white" ? ["8", "7", "6", "5", "4", "3", "2", "1"] : ["1", "2", "3", "4", "5", "6", "7", "8"];
-	const fileLabels = state.orientation === "white" ? ["a", "b", "c", "d", "e", "f", "g", "h"] : ["h", "g", "f", "e", "d", "c", "b", "a"];
-
-	for (const label of rankLabels) {
-		const el = document.createElement("qd-coord");
-		el.textContent = label;
-		dom.ranks.appendChild(el);
+	// If we have a memo and nothing relevant changed, return early.
+	if (memo && memo.orientation === state.orientation && memo.coordinates === state.coordinates) {
+		return;
 	}
 
-	for (const label of fileLabels) {
-		const el = document.createElement("qd-coord");
-		el.textContent = label;
-		dom.files.appendChild(el);
+	// Rebuild labels if orientation changed (or this is the first render).
+	if (!memo || memo.orientation !== state.orientation) {
+		dom.ranks.innerHTML = "";
+		dom.files.innerHTML = "";
+
+		const rankLabels = state.orientation === "white" ? ["8", "7", "6", "5", "4", "3", "2", "1"] : ["1", "2", "3", "4", "5", "6", "7", "8"];
+		const fileLabels = state.orientation === "white" ? ["a", "b", "c", "d", "e", "f", "g", "h"] : ["h", "g", "f", "e", "d", "c", "b", "a"];
+
+		for (const label of rankLabels) {
+			const el = document.createElement("qd-coord");
+			el.textContent = label;
+			dom.ranks.appendChild(el);
+		}
+
+		for (const label of fileLabels) {
+			const el = document.createElement("qd-coord");
+			el.textContent = label;
+			dom.files.appendChild(el);
+		}
 	}
 
-	if (state.coordinates) {
-		dom.ranks.classList.remove("hidden");
-		dom.files.classList.remove("hidden");
-	} else {
-		dom.ranks.classList.add("hidden");
-		dom.files.classList.add("hidden");
+	// Toggle hidden class if coordinates changed (or this is the first render).
+	if (!memo || memo.coordinates !== state.coordinates) {
+		if (state.coordinates) {
+			dom.ranks.classList.remove("hidden");
+			dom.files.classList.remove("hidden");
+		} else {
+			dom.ranks.classList.add("hidden");
+			dom.files.classList.add("hidden");
+		}
 	}
+
+	// Update memo for next call.
+	coordsMemos.set(dom, { orientation: state.orientation, coordinates: state.coordinates });
 }
 
 export function applyWrapState(dom: BoardDom, state: BoardState): void {

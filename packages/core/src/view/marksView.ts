@@ -14,6 +14,9 @@ function round(n: number): number {
  *  outside the SVG that owns them. */
 let gradientSeq = 0;
 
+/** Tracks per board whether the previous render left anything drawn in the layers. */
+const drewSomething = new WeakMap<BoardDom, boolean>();
+
 export function markKey(mark: Mark): string {
 	return mark.to ? `${mark.from}${mark.to}` : mark.from;
 }
@@ -139,8 +142,14 @@ function fadeToOpaque(
 }
 
 export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | null): void {
+	// A board that has never drawn has nothing to clear, so `undefined` counts as
+	// "nothing drawn" here just as `false` does.
 	if (!state.marks.enabled) {
+		if (!drewSomething.get(dom)) {
+			return;
+		}
 		clearLayers(dom);
+		drewSomething.set(dom, false);
 		return;
 	}
 
@@ -161,6 +170,13 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 	// a redraw paints one arrow rather than two stacked copies of it.
 	if (current) {
 		user.set(markKey(current), current);
+	}
+
+	// The list has to be built before this decision, so that a `current` mark on
+	// an otherwise empty board still counts as something to draw.
+	const hasMarks = auto.size > 0 || user.size > 0;
+	if (!hasMarks && !drewSomething.get(dom)) {
+		return;
 	}
 
 	clearLayers(dom);
@@ -309,4 +325,8 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 			dom.marks.appendChild(circle);
 		}
 	}
+
+	// Record what this render actually left behind, not merely that it ran: a
+	// render that cleared down to empty must let the next one early-out.
+	drewSomething.set(dom, hasMarks);
 }

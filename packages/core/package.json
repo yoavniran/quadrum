@@ -28,22 +28,18 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
     "./fen": {
-      "source": "./src/fen.ts",
       "types": "./dist/fen.d.ts",
       "default": "./dist/fen.js"
     },
     "./mobility": {
-      "source": "./src/mobility.ts",
       "types": "./dist/mobility.d.ts",
       "default": "./dist/mobility.js"
     },
     "./premove": {
-      "source": "./src/premove.ts",
       "types": "./dist/premove.d.ts",
       "default": "./dist/premove.js"
     },
@@ -52,7 +48,6 @@
   },
   "files": [
     "dist",
-    "src",
     "assets"
   ],
   "engines": {

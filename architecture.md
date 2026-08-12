@@ -26,10 +26,11 @@ to ship — see "No theme" below — so every consumer authors an equivalent, an
 the worked example. Its pieces are Unicode glyphs on `qd-piece::after`, so the repo carries
 no binary art and no font licence.
 
-Both packages publish a real build (`dist/`, ESM + declarations) but resolve to `src/`
-inside the repo, via a `"source"` export condition that `tsconfig.base.json` and the
-demo's Vite config opt into. Consumers get compiled JS; the repo never reads a stale
-`dist/`.
+Both packages publish `dist/` only — ESM, declarations and sourcemaps, plus core's
+`assets/quadrum.css` — and no `src/`. Inside the repo they still resolve to `src/`: TypeScript
+via `paths` in `tsconfig.base.json`, bundlers via a matching `resolve.alias` in
+`vitest.config.ts` and each app's Vite config. Consumers get compiled JS; the repo never
+reads a stale `dist/`.
 
 ## The core package
 
@@ -133,6 +134,6 @@ user marks; a consumer that wants lichess-style clearing opts in with
 
 See the Development section of [`README.md`](./README.md) — `pnpm install`, `pnpm test`,
 `pnpm typecheck`, `pnpm build`. `pnpm dev` serves `apps/demo` through Vite, which compiles
-the packages' TypeScript source directly (via the `source` condition) and is the standing
+the packages' TypeScript source directly (via `resolve.alias`) and is the standing
 proof that a real bundler can consume them. CI runs typecheck, tests, `pnpm build` and a
 demo build on every PR; see the Building and releasing section of the README.

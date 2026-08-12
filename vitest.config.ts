@@ -8,10 +8,16 @@ export default defineConfig({
 	plugins: [react()],
 	resolve: {
 		alias: {
-			// The CSS subpath must come first: the bare "quadrum" alias below matches
-			// by prefix and would otherwise swallow "quadrum/assets/quadrum.css",
-			// which apps/bench's adapter imports.
+			// The packages publish dist/ only, so the suites read their src/ from
+			// here. Order matters: a string alias matches as a prefix, so the bare
+			// "quadrum" entry must come last or it swallows every subpath above it
+			// -- including "quadrum/assets/quadrum.css", which apps/bench's adapter
+			// imports.
 			"quadrum/assets/quadrum.css": r("./packages/core/assets/quadrum.css"),
+			"quadrum/fen": r("./packages/core/src/fen.ts"),
+			"quadrum/mobility": r("./packages/core/src/mobility.ts"),
+			"quadrum/premove": r("./packages/core/src/premove.ts"),
+			"quadrum-react": r("./packages/react/src/index.ts"),
 			quadrum: r("./packages/core/src/index.ts"),
 		},
 		dedupe: ["react", "react-dom"],

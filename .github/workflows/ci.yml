@@ -4,9 +4,9 @@ name: CI
 # bundler build of the demo app. Make this a *required* status check in the repo's
 # branch-protection rules so PRs can't merge until it's green.
 #
-# The demo build is not busywork: the packages ship TypeScript source through their
-# `exports` maps with no build step, so `apps/demo` building under Vite is the only
-# proof that a real bundler can consume them.
+# The demo build is not busywork: inside the repo the packages are aliased to their
+# TypeScript source, so `apps/demo` building under Vite is the only proof that a real
+# bundler can compile that source end to end.
 on:
   pull_request:
     branches:

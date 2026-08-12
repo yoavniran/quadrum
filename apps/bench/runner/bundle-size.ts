@@ -76,9 +76,10 @@ export async function measureBundles(appRoot: string): Promise<BundleSizeResult[
 					write: true,
 					sourcemap: false,
 				},
-				resolve: {
-					conditions: ["source", "module", "browser", "production"],
-				},
+				// No `resolve` here on purpose: `root` is apps/bench, so this build loads
+				// apps/bench/vite.config.ts and inherits its alias, which maps quadrum to
+				// its src/. That keeps the measured bytes the CURRENT source rather than a
+				// stale dist/, and keeps chessground on ordinary consumer resolution.
 			})) as Rollup.RollupOutput | Rollup.RollupOutput[];
 
 			// Never guess the filename. Vite's lib mode derives the extension from the

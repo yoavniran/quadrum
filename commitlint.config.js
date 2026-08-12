@@ -49,5 +49,14 @@ export default {
 		// and do not follow the convention.
 		(message) => message.startsWith("Merge "),
 		(message) => message.startsWith("Version Packages"),
+
+		// Dependabot's messages, which .github/dependabot.yml already shapes into
+		// `chore(deps): ...` / `ci(deps): ...`. They are exempt from the rest --
+		// specifically header-max-length, since "bump @commitlint/config-conventional
+		// from 21.2.0 to 21.2.1" blows past 72 with a name that long and the bot
+		// cannot be told to shorten it. The prefix is checked here rather than the
+		// author, because the `commits` job also lints the PR *title*, where no
+		// author is available.
+		(message) => /^(chore|ci)\(deps(-dev)?\)(!)?: /.test(message),
 	],
 };

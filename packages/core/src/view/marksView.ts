@@ -192,6 +192,7 @@ function fadeToOpaque(
 	pen: Pen,
 	segment: { x1: number; y1: number; x2: number; y2: number },
 ): string | null {
+	// Access marks getter to ensure layer exists (we're about to append to it)
 	const defs = dom.marks.querySelector("defs");
 	if (!defs) {
 		return null;
@@ -349,6 +350,13 @@ function enforceOrder(layer: SVGSVGElement, nodes: readonly (SVGElement | undefi
 		placeBefore(layer, node, anchor);
 		anchor = node;
 	}
+}
+
+function orderLayer(layer: SVGSVGElement | null, nodes: readonly (SVGElement | undefined)[]): void {
+	if (!layer) {
+		return;
+	}
+	enforceOrder(layer, nodes);
 }
 
 export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | null): void {
@@ -611,12 +619,16 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 	// of the layer regardless of where it belongs in draw order (auto under
 	// user); this re-threads the sibling chain to match draw order, moving only
 	// the nodes that are actually out of place.
-	enforceOrder(dom.marks, marksLayerOrder);
-	enforceOrder(dom.heads, headsLayerOrder);
-	enforceOrder(dom.badges, badgesLayerOrder);
+	// Peeking is enough here, and it has to be a peek: every node in these lists
+	// was put there by appending to its layer, so a layer with anything to order
+	// already exists. A board whose marks are all circles never needs a heads
+	// layer, and the getter would conjure one purely to sort nothing.
+	orderLayer(dom.marksOrNull, marksLayerOrder);
+	orderLayer(dom.headsOrNull, headsLayerOrder);
+	orderLayer(dom.badgesOrNull, badgesLayerOrder);
 
 	// Clean up unreferenced gradients.
-	const defsElement = dom.marks.querySelector("defs");
+	const defsElement = dom.marksOrNull?.querySelector("defs");
 	if (defsElement && cache.referencedGradientKeys) {
 		const keysToRemove: string[] = [];
 		for (const [key, gradient] of cache.gradients) {

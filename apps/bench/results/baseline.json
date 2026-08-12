@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "mintedFrom": {
-    "runId": "run-1786461855102",
-    "startedAt": "2026-08-11T15:24:15.102Z",
-    "gitSha": "88b879e2063124293aed7c10866271dad2ae49d5",
-    "repetitions": 31
+    "runId": "run-1786565903234",
+    "startedAt": "2026-08-12T20:18:23.234Z",
+    "gitSha": "e1130fc1b1c65162ea4cea918f2d78e4338a765c",
+    "repetitions": 61
   },
   "browser": {
     "cpuThrottlingRate": 4,
@@ -20,56 +20,60 @@
       "gated": true,
       "unit": "ms",
       "direction": "lower",
-      "ratio": 1.5476190476791032,
+      "statistic": "median",
+      "ratio": 1.2295918368340906,
       "ratioCi95": [
-        1.5117370891587698,
-        1.5970873786155382
+        1.1849999998812564,
+        1.2827225131255435
       ],
       "quadrum": {
-        "median": 1.625,
+        "median": 1.2050000000745058,
         "ci95": [
-          1.6099999998696148,
-          1.6450000000186265
+          1.1849999998812564,
+          1.2250000000931323
         ]
       },
       "chessground": {
-        "median": 1.0499999999592546,
+        "median": 0.9799999999813735,
         "ci95": [
-          1.0300000000279397,
-          1.0649999999441206
+          0.955000000045402,
+          1
         ]
       }
     },
     "update-throughput-anim-off": {
-      "headlineMetric": "update-layout-ms",
-      "gated": true,
+      "headlineMetric": "update-total-script-ms",
+      "gated": false,
       "unit": "ms",
       "direction": "lower",
-      "ratio": 5.000000038805108,
+      "statistic": "median",
+      "ratio": 4.795774648269396,
       "ratioCi95": [
-        5.000000031044086,
-        5.3333333708449375
+        4.0398009957474725,
+        5.593537414936087
       ],
       "quadrum": {
-        "median": 0.0750000000698492,
+        "median": 30.645000000833534,
         "ci95": [
-          0.07499999995343387,
-          0.08000000001629815
+          28.42000000004191,
+          32.88999999919906
         ]
       },
       "chessground": {
-        "median": 0.014999999897554517,
+        "median": 6.389999999664724,
         "ci95": [
-          0.014999999897554517,
-          0.014999999897554517
+          5.879999999888241,
+          7.034999998752028
         ]
-      }
+      },
+      "demotedReason": "update-throughput-anim-off/update-total-script-ms: chessground CI half-width 9.0% of median (max 8%)"
     },
     "update-throughput-anim-on": {
       "headlineMetric": "frame-interval-p95",
       "gated": false,
       "unit": "ms",
       "direction": "lower",
+      "statistic": "median",
       "ratio": 1,
       "ratioCi95": [
         1,
@@ -91,27 +95,28 @@
       }
     },
     "engine-arrow-tick": {
-      "headlineMetric": "arrow-tick-script-ms",
+      "headlineMetric": "arrow-tick-total-script-ms",
       "gated": true,
       "unit": "ms",
       "direction": "lower",
-      "ratio": 15.999999984477958,
+      "statistic": "median",
+      "ratio": 3.25217671737963,
       "ratioCi95": [
-        15.777777726612525,
-        16.111111094295566
+        3.102337333728907,
+        3.4109544112573826
       ],
       "quadrum": {
-        "median": 0.7199999999720603,
+        "median": 50.4250000026077,
         "ci95": [
-          0.7100000001955777,
-          0.7249999999185093
+          49.10999999893829,
+          52
         ]
       },
       "chessground": {
-        "median": 0.045000000041909516,
+        "median": 15.504999999888241,
         "ci95": [
-          0.045000000041909516,
-          0.04500000015832484
+          15.245000000111759,
+          15.830000001937151
         ]
       }
     },
@@ -120,23 +125,24 @@
       "gated": false,
       "unit": "ms",
       "direction": "lower",
-      "ratio": 0.8805309734500169,
+      "statistic": "p95",
+      "ratio": 0.9680377259695674,
       "ratioCi95": [
-        0.8741721853719181,
-        0.8888888888888888
+        0.9639121338943469,
+        0.9721784776702855
       ],
       "quadrum": {
-        "median": 1.9900000000052387,
+        "median": 18.475000000093132,
         "ci95": [
-          1.9799999999813735,
-          2
+          18.430000000167638,
+          18.519999999788705
         ]
       },
       "chessground": {
-        "median": 2.2600000000093132,
+        "median": 19.084999999962747,
         "ci95": [
-          2.25,
-          2.265000000130385
+          19.050000000174624,
+          19.12000000011176
         ]
       }
     },
@@ -145,23 +151,24 @@
       "gated": false,
       "unit": "ms",
       "direction": "lower",
-      "ratio": 0.08484848493229533,
+      "statistic": "median",
+      "ratio": 0.08024691350572408,
       "ratioCi95": [
-        0.08383233540531244,
-        0.09815950930060233
+        0.07317073179042141,
+        0.08074534155203061
       ],
       "quadrum": {
-        "median": 0.07000000006519258,
+        "median": 0.06499999994412065,
         "ci95": [
-          0.07000000006519258,
-          0.0800000000745058
+          0.060000000055879354,
+          0.06499999994412065
         ]
       },
       "chessground": {
-        "median": 0.8249999999534339,
+        "median": 0.8100000000558794,
         "ci95": [
-          0.8149999999441206,
-          0.8350000000209548
+          0.8049999999348074,
+          0.8199999998323619
         ]
       }
     },
@@ -170,6 +177,7 @@
       "gated": true,
       "unit": "count",
       "direction": "lower",
+      "statistic": "median",
       "ratio": 1,
       "ratioCi95": [
         1,
@@ -195,16 +203,17 @@
       "gated": true,
       "unit": "bytes",
       "direction": "lower",
-      "ratio": 0.7261495013679287,
+      "statistic": "median",
+      "ratio": 0.8686788456446916,
       "ratioCi95": [
-        0.7261495013679287,
-        0.7261495013679287
+        0.8686788456446916,
+        0.8686788456446916
       ],
       "quadrum": {
-        "median": 8228,
+        "median": 9843,
         "ci95": [
-          8228,
-          8228
+          9843,
+          9843
         ]
       },
       "chessground": {

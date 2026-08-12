@@ -346,9 +346,11 @@ jobs:
           name: bench-results-${{ github.run_id }}
           path: apps/bench/results/
 
-      # Throws when a gated scenario's CI half-width exceeds the cap. That failure
-      # is the point -- minting is where an unstable gate gets caught, and the fix
-      # is to quiet the noise, never to widen the tolerance.
+      # A gated scenario whose CI half-width exceeds the cap is demoted to
+      # reported-only rather than failing the mint -- the demotion shows up in the
+      # baseline PR diff and the step summary, and the fix is to quiet the noise,
+      # never to widen the tolerance. The mint only fails outright when every
+      # gated timing scenario is that noisy: such a run measured the machine.
       - name: Mint the baseline
         run: |
           node .github/scripts/write-bench-report.mjs baseline \

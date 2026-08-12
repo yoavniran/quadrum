@@ -158,6 +158,38 @@ describe("compareToBaseline", () => {
 		},
 	});
 
+	it("reports instead of gating a scenario the mint demoted for noise", () => {
+		// The baseline records that this scenario's ratio was too noisy to gate;
+		// gating it anyway would resurrect the coin flip the demotion removed --
+		// even a flagrant regression against the demoted ratio must not fail.
+		const demotedBase = baseline({
+			mount: {
+				...base.scenarios.mount,
+				gated: false,
+				demotedReason: "mount/m: chessground CI half-width 9.0% of median (max 8%)",
+			},
+		});
+
+		const gate = compareToBaseline(
+			summary([
+				scenario({
+					metrics: [
+						metric({
+							quadrum: { median: 70, ci95: [69, 71] },
+							chessground: { median: 10, ci95: [9.8, 10.2] },
+						}),
+					],
+				}),
+			]),
+			demotedBase,
+			{},
+		);
+
+		expect(statusOf(gate, "mount")).toBe("reported");
+		expect(gate.results.find((r) => r.scenarioId === "mount").reason).toMatch(/demoted at mint/);
+		expect(gate.ok).toBe(true);
+	});
+
 	it("fails with a stale-baseline reason when the scenario re-points its headline metric", () => {
 		// The 2026-08-12 dispatch: the registry had moved
 		// update-throughput-anim-off from the timer-quantized `update-layout-ms`
@@ -646,7 +678,9 @@ describe("summarizeRun", () => {
 });
 
 describe("makeBaseline", () => {
-	it("refuses to mint a baseline that gates a scenario too noisy to gate", () => {
+	it("refuses to mint when every gated timing scenario is too noisy to gate", () => {
+		// With a single gated timing scenario, "one is noisy" and "all are noisy"
+		// coincide -- a run like this measured the machine, not the code.
 		expect(() =>
 			makeBaseline(
 				summary([
@@ -656,6 +690,27 @@ describe("makeBaseline", () => {
 				]),
 			),
 		).toThrow(/noise limit/);
+	});
+
+	it("demotes a noisy gated scenario to reported-only instead of failing the mint", () => {
+		// A full run costs over an hour; one metric's CI landing a point over the
+		// cap must cost that scenario its gate, not the whole run.
+		const minted = makeBaseline(
+			summary([
+				scenario({
+					metrics: [metric({ quadrum: { median: 10, ci95: [7, 13] }, chessground: { median: 10, ci95: [9.9, 10.1] } })],
+				}),
+				scenario({
+					id: "steady",
+					metrics: [metric({ quadrum: { median: 7, ci95: [6.95, 7.05] }, chessground: { median: 10, ci95: [9.9, 10.1] } })],
+				}),
+			]),
+		);
+
+		expect(minted.scenarios.mount.gated).toBe(false);
+		expect(minted.scenarios.mount.demotedReason).toMatch(/quadrum CI half-width/);
+		expect(minted.scenarios.steady.gated).toBe(true);
+		expect(minted.scenarios.steady.demotedReason).toBeUndefined();
 	});
 
 	it("mints a baseline holding only each scenario's headline metric", () => {

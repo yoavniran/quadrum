@@ -311,7 +311,10 @@ Other rules, each of which exists because of a specific way this could be gamed:
 - A scenario in the results but not the baseline is **advisory** — adding a scenario must never
   break `main`.
 - A scenario may only be gated at all if its CI half-width is under **8% of its median** on the
-  baseline run. `makeBaseline` throws otherwise, naming the offenders.
+  baseline run. `makeBaseline` enforces that by **demoting** a noisier scenario to reported-only —
+  it stays in the baseline with a recorded `demotedReason`, visible in the PR diff and the step
+  summary, and stops gating PRs until a quieter run re-mints it. The mint fails outright only when
+  *every* gated timing scenario breaches the cap: that run measured the machine, not the code.
 - A PR that touches **both** `results/baseline.json` and `packages/*/src` fails unless it carries
   the `bench-rebaseline` label. A regression riding in with its own baseline update is the one
   diff that is invisible to every other check in the repo.
@@ -337,8 +340,9 @@ having no gate.
    laptop baseline gates a CI runner forever after.
 3. The `mint-baseline` job runs `write-bench-report.mjs baseline` for you and opens a PR with the
    new `results/baseline.json` and, beside it, `results/baseline-run.json` — the full record it was
-   derived from. If the job fails, a gated scenario is too noisy to gate; fix the noise, do not
-   widen the tolerance.
+   derived from. A gated scenario too noisy to gate is demoted to reported-only and named in the
+   step summary — review the demotions with the ratios. If the job fails outright, every gated
+   timing scenario was that noisy; re-run on a quieter runner, do not widen the tolerance.
 4. Diff the baseline. Every changed ratio needs a sentence in the PR saying why it moved.
 5. If the PR also touches `packages/*/src`, add the **`bench-rebaseline`** label — and expect a
    reviewer to read the source diff and the ratio diff together, which is the entire point.

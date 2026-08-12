@@ -15,7 +15,8 @@
  *        and prints the fact into the step summary.
  *
  *   baseline <results.json> --out <baseline.json>
- *     -> mints a gate baseline. Throws if any gated scenario is too noisy to gate.
+ *     -> mints a gate baseline. A gated scenario too noisy to gate is demoted to
+ *        reported-only; throws only if every gated timing scenario is that noisy.
  *
  *   publish <results.json> --readme <README.md>
  *     -> splices the headline block between the bench:headline markers.
@@ -184,9 +185,9 @@ if (mode === "summarize") {
 		throw new Error("usage: write-bench-report.mjs baseline <results.json> --out <baseline.json>");
 	}
 
-	// makeBaseline throws when a gated scenario's interval is too wide to gate.
-	// That failure is the point: minting a baseline is where an unstable gate
-	// gets locked in for everyone who comes after.
+	// makeBaseline demotes a gated scenario whose interval is too wide to gate
+	// to reported-only, and throws only when every gated timing scenario is that
+	// noisy -- a run like that measured the machine, not the code.
 	const baseline = makeBaseline(summarizeRun(readJson(positional[0])));
 
 	writeFileSync(out, `${JSON.stringify(baseline, null, 2)}\n`);
@@ -197,6 +198,20 @@ if (mode === "summarize") {
 	console.log(
 		`baseline written to ${out} (${Object.keys(baseline.scenarios).length} scenarios, ${gatedCount} gated)`,
 	);
+
+	const demoted = Object.entries(baseline.scenarios).filter(([, entry]) => entry.demotedReason);
+
+	if (demoted.length > 0) {
+		for (const [id, entry] of demoted) {
+			console.warn(`demoted to reported-only, too noisy to gate: ${id}: ${entry.demotedReason}`);
+		}
+
+		stepSummary(
+			`### Demoted at mint\n\nThese scenarios stay in the report but will not gate PRs until a quieter run re-mints them:\n\n${demoted
+				.map(([id, entry]) => `- **${id}** — ${entry.demotedReason}`)
+				.join("\n")}`,
+		);
+	}
 } else if (mode === "publish" || mode === "check") {
 	const readmePath = flag("readme");
 

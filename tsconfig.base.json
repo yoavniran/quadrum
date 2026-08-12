@@ -4,7 +4,21 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "customConditions": ["source"],
+    // Inside the repo the workspace packages are read as TypeScript source, so a
+    // type-check never depends on a built (or stale, or missing) dist/. The
+    // published packages expose dist/ only, so this mapping is what replaces the
+    // `"source"` export condition they used to carry.
+    //
+    // Paths are relative to THIS file, not to the config that extends it.
+    // `packages/react/tsconfig.build.json` clears them deliberately -- see the
+    // comment there.
+    "paths": {
+      "quadrum": ["./packages/core/src/index.ts"],
+      "quadrum/fen": ["./packages/core/src/fen.ts"],
+      "quadrum/mobility": ["./packages/core/src/mobility.ts"],
+      "quadrum/premove": ["./packages/core/src/premove.ts"],
+      "quadrum-react": ["./packages/react/src/index.ts"]
+    },
     "strict": true,
     "noUncheckedIndexedAccess": false,
     "noUnusedLocals": true,

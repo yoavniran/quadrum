@@ -1,6 +1,17 @@
 {
   "name": "quadrum-monorepo",
   "private": true,
+  "description": "Monorepo for quadrum, an MIT, zero-dependency chess board renderer for the web, and its React bindings",
+  "license": "MIT",
+  "author": "Yoav Niran",
+  "homepage": "https://github.com/yoavniran/quadrum#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yoavniran/quadrum.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yoavniran/quadrum/issues"
+  },
   "type": "module",
   "packageManager": "pnpm@11.15.0",
   "engines": {

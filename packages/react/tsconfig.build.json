@@ -1,6 +1,14 @@
 {
 	"extends": "./tsconfig.json",
 	"compilerOptions": {
+		// Declaration emit only: `quadrum` must resolve to core's published
+		// dist/*.d.ts through node_modules, NOT to core's src/ via the workspace
+		// `paths` in tsconfig.base.json. With those paths in effect, core's sources
+		// join this program and every one of them fails rootDir ("not under
+		// 'packages/react/src'"), which also scatters .d.ts files through
+		// packages/core/src. Emitted declarations keep `from "quadrum"` as a bare
+		// specifier either way -- tsc does not rewrite aliases into its output.
+		"paths": {},
 		"types": [],
 		"noEmit": false,
 		"declaration": true,

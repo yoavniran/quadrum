@@ -28,7 +28,9 @@ any rules engine (chess.js, a server, a variant) and keeps the library small.
 ## Why it exists
 
 The obvious existing choice, [chessground](https://github.com/lichess-org/chessground), is
-GPL-3.0, which many applications cannot ship. quadrum is a clean-room MIT alternative.
+GPL-3.0, which many applications cannot ship. quadrum is a clean-room MIT alternative —
+the rules that were followed, and which of them you can verify yourself, are written down
+in **[CLEANROOM.md](./CLEANROOM.md)**.
 It also fixes a handful of structural problems that force chessground consumers to write workarounds:
 
 | Problem | quadrum's answer |
@@ -192,14 +194,18 @@ new consumer.
 ## Building and releasing
 
 `pnpm build` bundles both packages with tsup (ESM only) and emits declarations with
-`tsc --emitDeclarationOnly`; the output lands in each package's `dist/`. That is what npm
-consumers get.
+`tsc --emitDeclarationOnly`; the output lands in each package's `dist/`. The published
+tarballs are that `dist/` (JS, declarations and sourcemaps) plus core's
+`assets/quadrum.css` — no `src/`. Sourcemaps keep their embedded `sourcesContent`, so a
+consumer still debugs the original TypeScript without it being shipped twice.
 
-In-repo, nothing depends on `dist/` being fresh: each package's `exports` map carries a
-`"source"` condition pointing at `src/`, and both `tsconfig.base.json`
-(`customConditions`) and the demo's Vite config resolve it. So `pnpm typecheck`,
-`pnpm test` and `pnpm dev` all work against TypeScript source with no `dist/` present,
-and can never read a stale build.
+In-repo, nothing depends on `dist/` being fresh: `quadrum` and `quadrum-react` are mapped
+to their own `src/` by `paths` in `tsconfig.base.json` and by a matching `resolve.alias`
+in `vitest.config.ts` and each app's Vite config. So `pnpm typecheck`, `pnpm test` and
+`pnpm dev` all work against TypeScript source with no `dist/` present, and can never read
+a stale build. The one exception is deliberate: `packages/react/tsconfig.build.json`
+clears `paths`, so its declaration emit resolves `quadrum` to core's built `dist/*.d.ts`
+the way a consumer does.
 
 Releases are driven by [changesets](https://github.com/changesets/changesets): add one
 with `pnpm changeset` in any PR that changes published code. CI posts a warning — not a

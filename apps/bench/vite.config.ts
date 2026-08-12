@@ -1,4 +1,7 @@
 import { defineConfig } from "vite";
+import { fileURLToPath } from "node:url";
+
+const pkg = (p: string) => fileURLToPath(new URL(`../../packages/${p}`, import.meta.url));
 
 // Cross-origin isolation unlocks 5µs performance.now() resolution; without it
 // Chromium clamps the timer to 100µs and any sub-0.1ms bracket (a single
@@ -18,12 +21,20 @@ export default defineConfig({
 		headers: isolationHeaders,
 	},
 	resolve: {
-		// Same as apps/demo: resolve the workspace packages through their "source"
-		// export condition so the benchmark measures the CURRENT src/, never a stale
-		// dist/. chessground has no "source" condition and falls through to
-		// module/browser, which is what a real consumer gets.
-		// Vite's defaults are listed explicitly because this REPLACES them.
-		conditions: ["source", "module", "browser", "development|production"]
+		// Same as apps/demo: point the workspace packages at their own src/ so the
+		// benchmark measures the CURRENT source, never a stale dist/. chessground is
+		// left to normal resolution, which is what a real consumer gets.
+		//
+		// Order matters -- Vite matches a string alias as a prefix, so the bare
+		// "quadrum" entry must come last or it swallows every subpath above it.
+		alias: {
+			"quadrum/assets/quadrum.css": pkg("core/assets/quadrum.css"),
+			"quadrum/fen": pkg("core/src/fen.ts"),
+			"quadrum/mobility": pkg("core/src/mobility.ts"),
+			"quadrum/premove": pkg("core/src/premove.ts"),
+			"quadrum-react": pkg("react/src/index.ts"),
+			quadrum: pkg("core/src/index.ts")
+		}
 	},
 	build: {
 		// The runner always drives the production build. Sourcemaps stay on so a

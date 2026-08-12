@@ -1,0 +1,64 @@
+# Dependency updates. Two ecosystems: the pnpm workspace and the Actions used by
+# the workflows in this directory.
+#
+# Updates are grouped so a week's worth of bumps arrives as one PR per group rather
+# than a dozen. Every PR still has to pass `ci.yml`, which is the actual gate --
+# Dependabot only proposes.
+version: 2
+
+updates:
+  # A single npm entry at the workspace root covers every manifest: `directories`
+  # lists the root plus both globs from pnpm-workspace.yaml, and all of them resolve
+  # against the one root pnpm-lock.yaml.
+  - package-ecosystem: npm
+    directories:
+      - "/"
+      - "/packages/*"
+      - "/apps/*"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      # commitlint runs on every commit in a PR and on the PR title, so Dependabot's
+      # messages have to be Conventional Commits too, or CI fails on its own PRs.
+      prefix: chore
+      prefix-development: chore
+      include: scope
+    groups:
+      # Published packages have no runtime dependencies, so anything landing in
+      # `dependencies` is a workspace link. Everything real is a dev tool.
+      types:
+        patterns:
+          - "@types/*"
+        update-types:
+          - minor
+          - patch
+      dev-minor-patch:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      prod-minor-patch:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # chessground is pinned to an exact version on purpose: the benchmark numbers in
+      # the README and apps/bench are only comparable against the version they were
+      # measured on. Bumping it is a deliberate act with a re-baseline, not a chore.
+      - dependency-name: chessground
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        patterns:
+          - "*"

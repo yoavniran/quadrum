@@ -34,6 +34,7 @@ import { SCENARIOS, GATED_SCENARIO_IDS } from "../src/scenarios/registry";
 interface BaselineScenario {
 	readonly headlineMetric: string;
 	readonly gated: boolean;
+	readonly demotedReason?: string;
 }
 
 interface Baseline {
@@ -55,7 +56,7 @@ const RE_MINT = "re-mint the baseline: workflow_dispatch on bench.yml with mint_
  * below fail if an entry stops drifting, so the list cannot quietly become
  * permanent.
  */
-const PENDING_REMINT: ReadonlySet<string> = new Set(["update-throughput-anim-off", "engine-arrow-tick"]);
+const PENDING_REMINT: ReadonlySet<string> = new Set();
 
 describe("committed baseline is in sync with the scenario registry", () => {
 	it("covers exactly the scenarios the registry defines", () => {
@@ -76,7 +77,33 @@ describe("committed baseline is in sync with the scenario registry", () => {
 	for (const scenario of SCENARIOS) {
 		describe(scenario.id, () => {
 			it("is gated in the baseline exactly as the registry says", () => {
-				expect(baseline.scenarios[scenario.id]?.gated).toBe(GATED_SCENARIO_IDS.includes(scenario.id));
+				const stored = baseline.scenarios[scenario.id];
+				const registryGated = GATED_SCENARIO_IDS.includes(scenario.id);
+
+				// The mint may demote a registry-gated scenario to reported-only when
+				// its noise exceeds the gating cap. That is the one sanctioned way the
+				// two files disagree, and the baseline must say why.
+				if (registryGated && stored?.gated === false) {
+					expect(
+						stored.demotedReason,
+						`the registry gates ${scenario.id} but the baseline does not, and no ` +
+							`demotedReason explains it. Either the baseline predates a registry change (${RE_MINT}) ` +
+							"or the gated flag was edited by hand.",
+					).toBeTruthy();
+
+					return;
+				}
+
+				expect(stored?.gated).toBe(registryGated);
+			});
+
+			it("carries a demotedReason only if it was demoted", () => {
+				const stored = baseline.scenarios[scenario.id];
+
+				if (stored?.demotedReason !== undefined) {
+					expect(GATED_SCENARIO_IDS.includes(scenario.id)).toBe(true);
+					expect(stored.gated).toBe(false);
+				}
 			});
 
 			if (PENDING_REMINT.has(scenario.id)) {

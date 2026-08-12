@@ -271,6 +271,13 @@ to about 26s. And `apps/bench/test/baseline-sync.test.ts` checks in milliseconds
 the committed baseline still gates the metric each scenario actually headlines — the drift that
 otherwise only surfaces 40 minutes into a run, and that no source change can fix.
 
+That test currently exempts `update-throughput-anim-off` and `engine-arrow-tick` through its
+`PENDING_REMINT` list, because both are genuinely drifted and only a mint run can clear them —
+and a mint cannot be run from a pull request, so leaving the assertion red would block every
+unrelated change until one happened. The exemption is self-expiring: each listed scenario is
+asserted to *still* drift, so the PR that commits a re-minted baseline is the same PR that is
+forced to delete the list.
+
 ---
 
 ## The regression gate

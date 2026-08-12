@@ -221,8 +221,15 @@ jobs:
       # which is itself a laundering vector. Only the scenarios that failed are
       # re-measured, in a fresh context at higher repetitions, and the gate is
       # only red if the second pass agrees.
+      #
+      # Skipped when the gate reports no re-measurable failure. A baseline that
+      # gates a metric nothing headlines any more cannot be argued with by
+      # measuring harder, and re-running it spends benchmark minutes to reprint
+      # the same sentence -- six of them on the 2026-08-12 PR run. This decides
+      # whether a second measurement could inform the verdict, never whether the
+      # verdict stands: the gate stays red either way.
       - name: Confirm a failure before believing it
-        if: failure() && steps.gate.outcome == 'failure'
+        if: failure() && steps.gate.outcome == 'failure' && steps.gate.outputs.confirmable == 'true'
         env:
           BENCH_TRIGGER: ${{ github.event_name }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}

@@ -551,6 +551,31 @@ export function scenariosInScope(summary, baseline) {
 }
 
 /**
+ * The failing scenarios a second measurement could actually overturn.
+ *
+ * The gate fails for two different kinds of reason. Most are verdicts about
+ * *numbers* -- a ratio past its threshold -- and those deserve the confirmation
+ * re-run, because a single noisy run should never be enough to turn a PR red.
+ * The rest are structural mismatches between two JSON files: the baseline gates
+ * a metric the scenario no longer headlines, the metric is absent, the scenario
+ * is absent. Those are settled before a browser starts, and re-measuring them
+ * burns benchmark minutes to reprint the same sentence -- six minutes of it on
+ * the 2026-08-12 PR run.
+ *
+ * Anything not explicitly marked `remeasurable: false` is treated as worth
+ * confirming, so a new failure kind gets the benefit of the doubt rather than
+ * silently losing its second chance.
+ *
+ * @param {{ results: any[] }} gate
+ * @returns {string[]}
+ */
+export function remeasurableFailures(gate) {
+	return gate.results
+		.filter((result) => result.status === "fail" && result.remeasurable !== false)
+		.map((result) => result.scenarioId);
+}
+
+/**
  * Apply the regression rules. Pure: returns verdicts, never exits.
  *
  * The comparison is ratio-based (quadrum / chessground) because the runner's
@@ -604,6 +629,7 @@ export function compareToBaseline(summary, baseline, options = {}) {
 						scenarioId: id,
 						status: "fail",
 						reason: "scenario is in the baseline but missing from the results",
+						remeasurable: false,
 					}
 				: {
 						scenarioId: id,
@@ -681,6 +707,7 @@ function gateScenario(scenario, base, limits) {
 			scenarioId: scenario.id,
 			status: "fail",
 			reason: `baseline metric ${base.headlineMetric} is missing from the results`,
+			remeasurable: false,
 		};
 	}
 
@@ -703,6 +730,7 @@ function gateScenario(scenario, base, limits) {
 			reason:
 				`baseline gates ${base.headlineMetric}, but this scenario now headlines ` +
 				`${scenario.headlineMetric}; the baseline predates the change and must be re-minted`,
+			remeasurable: false,
 		};
 	}
 

@@ -1,19 +1,53 @@
-import type { Piece, Square, Color, Point } from "../types";
+import type { Piece, Role, Square, Color, Point } from "../types";
 import type { BoardState } from "../options";
 import { squareToPoint } from "../model/squares";
+
+const ROLES: readonly string[] = ["king", "queen", "rook", "bishop", "knight", "pawn"];
+
+function isRole(value: string | undefined): value is Role {
+	return value !== undefined && ROLES.includes(value);
+}
 
 export function createPieceEl(piece: Piece): HTMLElement {
 	const el = document.createElement("qd-piece");
 	el.classList.add(piece.color, piece.role);
+	el.dataset.piece = `${piece.color}-${piece.role}`;
 	return el;
+}
+
+export function pieceOf(el: HTMLElement): Piece | null {
+	// The stamp is the fast path: one attribute read, no classList walk.
+	const stamp = el.dataset.piece;
+	if (stamp) {
+		const [color, role] = stamp.split("-");
+		if ((color === "white" || color === "black") && isRole(role)) {
+			return { color, role };
+		}
+	}
+
+	// Fall back to classList derivation for an element built before the stamp
+	// existed, then stamp it so the next read takes the fast path.
+	const color = el.classList.contains("white") ? "white" : el.classList.contains("black") ? "black" : null;
+	const role = color ? Array.from(el.classList).find((c) => ROLES.includes(c)) : undefined;
+
+	if (!color || !isRole(role)) {
+		return null;
+	}
+
+	el.dataset.piece = `${color}-${role}`;
+	return { color, role };
+}
+
+function pieceTransform(square: Square, orientation: Color, offset?: Point): string {
+	const point = squareToPoint(square, orientation);
+	const x = point.x + (offset?.x ?? 0);
+	const y = point.y + (offset?.y ?? 0);
+	return `translate(${x * 100}%, ${y * 100}%)`;
 }
 
 export function placePieceEl(el: HTMLElement, square: Square, orientation: Color, offset?: Point): void {
 	el.dataset.square = square;
-	const point = squareToPoint(square, orientation);
-	const x = point.x + (offset?.x ?? 0);
-	const y = point.y + (offset?.y ?? 0);
-	el.style.transform = `translate(${x * 100}%, ${y * 100}%)`;
+	el.style.transform = pieceTransform(square, orientation, offset);
 }
 
 export function placePieceAtPoint(el: HTMLElement, point: Point): void {
@@ -38,10 +72,20 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 		}
 
 		if (existing) {
-			const color = existing.classList.contains("white") ? "white" : "black";
-			const role = Array.from(existing.classList).find(c => !["white", "black"].includes(c)) as string | undefined;
-			if (color === piece.color && role === piece.role) {
-				placePieceEl(existing, square, state.orientation);
+			const occupant = pieceOf(existing);
+			if (occupant && occupant.color === piece.color && occupant.role === piece.role) {
+				// The survivor keeps its element. Write only what actually differs:
+				// an unconditional write costs a style recalc per piece per render,
+				// which is the whole point of this pass. The transform is compared
+				// rather than inferred from the square, because an orientation flip
+				// moves every piece without any of them changing square.
+				const transform = pieceTransform(square, state.orientation);
+				if (existing.dataset.square !== square) {
+					existing.dataset.square = square;
+				}
+				if (existing.style.transform !== transform) {
+					existing.style.transform = transform;
+				}
 				continue;
 			}
 		}

@@ -19,7 +19,9 @@ export function renderPromotion(
 	orientation: Color,
 	onPick: (role: Role | null) => void,
 ): void {
-	const existing = dom.overlay.querySelector("qd-promotion") as HTMLElement | null;
+	// Peek at the overlay to avoid creating it if teardown is all we need
+	const overlay = dom.overlayOrNull;
+	const existing = overlay?.querySelector("qd-promotion") as HTMLElement | null;
 
 	// Every board render calls through here, and a pointer moving across the
 	// board renders (hover decorations). Rebuilding an unchanged picker each
@@ -46,7 +48,7 @@ export function renderPromotion(
 				(cell as HTMLElement).removeEventListener("click", handler);
 			}
 		}
-		dom.overlay.removeChild(existing);
+		overlay!.removeChild(existing);
 	}
 
 	if (!req) {

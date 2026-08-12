@@ -684,6 +684,28 @@ function gateScenario(scenario, base, limits) {
 		};
 	}
 
+	// The scenario now headlines a different metric than the baseline gates.
+	// The old metric is usually still *present* in the results, so without this
+	// check the gate quietly compares the obsolete one and reports the answer as
+	// a regression -- which is how re-pointing `update-throughput-anim-off` from
+	// the quantized `update-layout-ms` to `update-total-script-ms` produced
+	// "regression: ratio 23.000 vs threshold 5.750" on 2026-08-12, describing a
+	// metric nothing in the repo headlines any more.
+	//
+	// Still a `fail`, not `inconclusive`. A neutral verdict here would be a
+	// laundering route: re-point the headline metric, watch the gate go quiet.
+	// The baseline genuinely cannot answer, and the fix is to re-mint it -- which
+	// is a reviewed PR, not a silent one.
+	if (scenario.headlineMetric && scenario.headlineMetric !== base.headlineMetric) {
+		return {
+			scenarioId: scenario.id,
+			status: "fail",
+			reason:
+				`baseline gates ${base.headlineMetric}, but this scenario now headlines ` +
+				`${scenario.headlineMetric}; the baseline predates the change and must be re-minted`,
+		};
+	}
+
 	// The memory scenario is gated as an invariant, never as a number: the
 	// verdict is zero-or-not. "quadrum retains 30% fewer nodes" would be a
 	// meaningless sentence.

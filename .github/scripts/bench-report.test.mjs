@@ -157,6 +157,46 @@ describe("compareToBaseline", () => {
 		},
 	});
 
+	it("fails with a stale-baseline reason when the scenario re-points its headline metric", () => {
+		// The 2026-08-12 dispatch: the registry had moved
+		// update-throughput-anim-off from the timer-quantized `update-layout-ms`
+		// to `update-total-script-ms`, but the committed baseline still gated the
+		// old key -- which is still present in the results. The gate compared it
+		// anyway and called the answer "regression: ratio 23.000", describing a
+		// metric nothing headlines any more.
+		const gate = compareToBaseline(
+			summary([
+				scenario({
+					headlineMetric: "total-script",
+					metrics: [
+						// The obsolete metric is still measured and still wildly over
+						// threshold -- exactly the trap. It must not be what decides.
+						metric({
+							key: "m",
+							quadrum: { median: 0.46, ci95: [0.45, 0.47] },
+							chessground: { median: 0.02, ci95: [0.02, 0.02] },
+						}),
+						metric({
+							key: "total-script",
+							quadrum: { median: 7, ci95: [6.8, 7.2] },
+							chessground: { median: 10, ci95: [9.8, 10.2] },
+						}),
+					],
+				}),
+			]),
+			base,
+			{},
+		);
+
+		expect(statusOf(gate, "mount")).toBe("fail");
+		expect(gate.results.find((r) => r.scenarioId === "mount").reason).toMatch(
+			/baseline gates m, but this scenario now headlines total-script/,
+		);
+		// Not laundered into a neutral verdict: re-pointing a headline metric must
+		// not be a way to make the gate go quiet.
+		expect(gate.ok).toBe(false);
+	});
+
 	it("passes when the lower bound sits exactly on the threshold", () => {
 		// threshold = 0.7 * 1.15 = 0.805, and the rule is a strict >. A gate that
 		// fires exactly at its own limit fails on rounding, not on regressions.

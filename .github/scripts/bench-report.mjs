@@ -390,8 +390,10 @@ function centralOf(subject, statistic = "median") {
 }
 
 export function makeBaseline(summary) {
+	/** @type {Map<string, string[]>} */
+	const noiseByScenario = new Map();
 	/** @type {string[]} */
-	const tooNoisy = [];
+	const gatedTimingIds = [];
 	/** @type {Record<string, any>} */
 	const scenarios = {};
 
@@ -407,6 +409,12 @@ export function makeBaseline(summary) {
 		const c = centralOf(metric.chessground, statistic);
 
 		if (scenario.gated) {
+			/** @type {string[]} */
+			const tooNoisy = [];
+
+			if (metric.unit === "ms") {
+				gatedTimingIds.push(scenario.id);
+			}
 			// Rule 1: quadrum's CI half-width must not exceed 8% of its central value.
 			const qHalfWidth = (q.ci95[1] - q.ci95[0]) / 2;
 			const qRelative = Math.abs(safeRatio(qHalfWidth, q.value));
@@ -473,6 +481,10 @@ export function makeBaseline(summary) {
 					);
 				}
 			}
+
+			if (tooNoisy.length > 0) {
+				noiseByScenario.set(scenario.id, tooNoisy);
+			}
 		}
 
 		scenarios[scenario.id] = {
@@ -490,10 +502,26 @@ export function makeBaseline(summary) {
 		};
 	}
 
-	if (tooNoisy.length > 0) {
+	// A scenario too noisy to gate is demoted to reported-only, not a reason to
+	// discard the whole run: a full run costs over an hour, and refusing to mint
+	// because one metric's CI landed a point over the cap threw four of them away
+	// before this rule changed. The plan's principle -- "a scenario may only be
+	// gated if its CI half-width is under 8% of its median" -- is enforced by NOT
+	// gating the noisy scenario, and the demotion is on the record twice: in the
+	// committed baseline diff a human reviews, and in the mint's step summary.
+	//
+	// The floor still holds: a run where EVERY gated timing scenario is too noisy
+	// measured the machine, not the code, and no demotion can save it.
+	if (gatedTimingIds.length > 0 && gatedTimingIds.every((id) => noiseByScenario.has(id))) {
+		const reasons = [...noiseByScenario.values()].flat();
 		throw new Error(
-			`cannot mint a baseline: gated scenarios exceed the noise limit:\n  ${tooNoisy.join("\n  ")}`,
+			`cannot mint a baseline: every gated timing scenario exceeds the noise limit:\n  ${reasons.join("\n  ")}`,
 		);
+	}
+
+	for (const [id, reasons] of noiseByScenario) {
+		scenarios[id].gated = false;
+		scenarios[id].demotedReason = reasons.join("; ");
 	}
 
 	return {
@@ -667,6 +695,20 @@ export function compareToBaseline(summary, baseline, options = {}) {
 
 		if (!scenario.gated) {
 			results.push({ scenarioId: scenario.id, status: "reported", reason: "not gated" });
+			continue;
+		}
+
+		// The registry wants this scenario gated, but the mint demoted it: its
+		// baseline ratio was too noisy to gate against, and gating it anyway
+		// would resurrect the coin flip the demotion removed.
+		if (base.gated === false) {
+			results.push({
+				scenarioId: scenario.id,
+				status: "reported",
+				reason: base.demotedReason
+					? `not gated: demoted at mint (${base.demotedReason})`
+					: "not gated: the baseline does not gate this scenario",
+			});
 			continue;
 		}
 

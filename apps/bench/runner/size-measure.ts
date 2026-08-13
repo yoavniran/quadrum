@@ -15,7 +15,7 @@
  */
 
 import { basename, dirname } from "node:path";
-import { normalizeConfig, runChecks, type OverweightTesterId } from "overweight";
+import { normalizeConfig, runChecks, type BuiltinTesterId } from "overweight";
 
 /**
  * overweight's schema requires a limit on every rule. Nothing here is gating, so
@@ -28,7 +28,7 @@ export interface SizeTarget {
 	readonly key: string;
 	/** Absolute path of the file to measure. */
 	readonly file: string;
-	readonly compression: OverweightTesterId;
+	readonly compression: BuiltinTesterId;
 }
 
 /**

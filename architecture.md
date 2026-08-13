@@ -151,9 +151,6 @@ directory (a normalized overweight config has a single `root`, and the bench wei
 from a temp build dir, the repo and `node_modules` at once), escapes glob metacharacters in
 file names, and throws instead of reporting a zero when a path stops resolving.
 
-overweight ships no type declarations as of 2.1.0, so `apps/bench/runner/overweight.d.ts`
-declares the slice the runner uses. It should be deleted once the package publishes its own.
-
 ## Running it
 
 See the Development section of [`README.md`](./README.md) — `pnpm install`, `pnpm test`,

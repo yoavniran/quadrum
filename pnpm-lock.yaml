@@ -70,8 +70,8 @@ importers:
         specifier: 9.2.1
         version: 9.2.1
       overweight:
-        specifier: ^2.1.0
-        version: 2.1.0
+        specifier: ^2.2.0
+        version: 2.2.0
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -1650,8 +1650,8 @@ packages:
   outdent@0.5.0:
     resolution: {integrity: sha512-/jHxFIzoMXdqPzTaCpFzAAWhpkSjZPF4Vsn6jAfNpmbH/ymsmd7Qc6VE9BGn0L6YMj6uwpQLxCECpus4ukKS9Q==}
 
-  overweight@2.1.0:
-    resolution: {integrity: sha512-JTJfbpOrezmMummzVqt5X3MBRiocrBQHu725Mzxy1gaCYfVucZhNQTnBlXtm3r79Y+pz6g5zgB1Q/QdKUh2UWg==}
+  overweight@2.2.0:
+    resolution: {integrity: sha512-V6S7an9AMz3PxEY6P9wn8qobWQ7R+jO/xcCCspnAtobUkS0O301T3XLBcEU1qmjI3sePXUehcW74h5jDTwvxSQ==}
     engines: {node: '>=24.0.0'}
     hasBin: true
 
@@ -3528,7 +3528,7 @@ snapshots:
 
   outdent@0.5.0: {}
 
-  overweight@2.1.0:
+  overweight@2.2.0:
     dependencies:
       '@actions/core': 3.0.1
       '@actions/exec': 3.0.0

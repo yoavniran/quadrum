@@ -16,6 +16,7 @@ import {
 	SCHEMA_VERSION,
 	TIMER_RESOLUTION_MS,
 	MIN_GATED_MEDIAN_TICKS,
+	DEFAULT_BUNDLE_TOLERANCE,
 } from "./bench-report.mjs";
 import { percentile, median, medianCi, describe as describeSamples, statisticCi, p95Ci } from "./bench-stats.mjs";
 
@@ -510,12 +511,29 @@ describe("compareToBaseline", () => {
 				}),
 			]);
 
-		it("passes a 1% growth", () => {
-			expect(statusOf(compareToBaseline(bundleSummary(10100), bundleBase), "bundle-size")).toBe("pass");
+		// Derived from DEFAULT_BUNDLE_TOLERANCE rather than hardcoded, because the
+		// tolerance is deliberately temporary: it is relaxed while
+		// docs/plans/update-path-node-churn.md is in flight and restored by that
+		// plan's Phase F. These assertions should follow it in both directions
+		// without being rewritten.
+		const withinTolerance = Math.round(10000 * (1 + DEFAULT_BUNDLE_TOLERANCE / 2));
+		const beyondTolerance = Math.round(10000 * (1 + DEFAULT_BUNDLE_TOLERANCE * 2));
+
+		it("passes growth inside the tolerance", () => {
+			expect(statusOf(compareToBaseline(bundleSummary(withinTolerance), bundleBase), "bundle-size")).toBe(
+				"pass",
+			);
 		});
 
-		it("fails a 3% growth", () => {
-			expect(statusOf(compareToBaseline(bundleSummary(10300), bundleBase), "bundle-size")).toBe("fail");
+		it("fails growth beyond the tolerance", () => {
+			expect(statusOf(compareToBaseline(bundleSummary(beyondTolerance), bundleBase), "bundle-size")).toBe(
+				"fail",
+			);
+		});
+
+		it("passes growth exactly at the tolerance (the bound is strict)", () => {
+			const exactly = 10000 * (1 + DEFAULT_BUNDLE_TOLERANCE);
+			expect(statusOf(compareToBaseline(bundleSummary(exactly), bundleBase), "bundle-size")).toBe("pass");
 		});
 	});
 

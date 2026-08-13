@@ -184,6 +184,13 @@ subtracted to remove the Rollup preamble. The entries are *the adapter surface a
 (mount, update, arrows, drag, destroy), not `export *`, which is meaningless against quadrum's
 subpath exports and pessimistic against chessground's single entry. Raw, gzip and brotli all ship.
 
+**The weighing is [`overweight`](https://github.com/yoavniran/overweight)'s, not ours.** The runner
+builds the bundles and does the baseline arithmetic; every byte count — raw, gzip, brotli, and both
+CSS rows — comes from overweight's testers via `runner/size-measure.ts`, so `min+brotli` means here
+what it means there and this repo keeps no second definition of it. Nothing is gated at that layer:
+overweight's limits are set out of reach and the pass/fail on growth stays in the bench gate, which
+compares against `results/baseline.json` (+2%, absolute).
+
 **CSS gets two rows.** "Library CSS" (`quadrum.css` vs `chessground.base.css`) flatters quadrum
 and means little on its own. "CSS + art needed for a working board" prices what you actually have
 to ship. quadrum provides no piece art; that cost falls on the consumer either way, and pretending
@@ -391,7 +398,7 @@ src/adapters/   quadrum/ · chessground/ · shared/ (parity CSS)
 src/scenarios/  registry + one file per scenario
 src/ui/         the visual page
 src/bench-api.ts   window.__bench = { list, run, env } -- the only runner contract
-runner/         Playwright + CDP driver, bundle sizing, console report
+runner/         Playwright + CDP driver, bundle sizing (overweight), console report
 bench-entries/  the three lib-mode entries scenario 8 builds
 results/        latest.json (published run) · baseline.json (gate baseline)
 test/           unit tests for stats, harness and the game data

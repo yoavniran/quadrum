@@ -130,6 +130,30 @@ user marks; a consumer that wants lichess-style clearing opts in with
   named so ordinary application CSS can reach it.
 - **No framework coupling in core.** React lives in its own package.
 
+## Measuring bundle size
+
+The benchmark's bundle-size scenario is the one number in the suite with no runtime noise,
+so it is gated absolutely (+2% against `apps/bench/results/baseline.json`) rather than by
+ratio. The measurement is split in two on purpose:
+
+- **This repo builds.** `apps/bench/runner/bundle-size.ts` produces three lib-mode Vite
+  builds (quadrum, chessground, an empty baseline) and does the arithmetic that makes the
+  rows honest — subtracting the baseline preamble, summing CSS with piece art.
+- **[`overweight`](https://github.com/yoavniran/overweight) weighs.** Every byte count goes
+  through its `none`/`gzip`/`brotli` testers via `apps/bench/runner/size-measure.ts`. The
+  runner previously called `node:zlib` itself, which meant this repo maintained a private
+  definition of "min+brotli"; it no longer does.
+
+`size-measure.ts` requests measurements only — overweight's per-file limits are set out of
+reach, because the gate that fails a PR lives in `.github/scripts/bench-report.mjs` and
+compares against the recorded baseline, not against a fixed ceiling. It groups targets by
+directory (a normalized overweight config has a single `root`, and the bench weighs files
+from a temp build dir, the repo and `node_modules` at once), escapes glob metacharacters in
+file names, and throws instead of reporting a zero when a path stops resolving.
+
+overweight ships no type declarations as of 2.1.0, so `apps/bench/runner/overweight.d.ts`
+declares the slice the runner uses. It should be deleted once the package publishes its own.
+
 ## Running it
 
 See the Development section of [`README.md`](./README.md) — `pnpm install`, `pnpm test`,

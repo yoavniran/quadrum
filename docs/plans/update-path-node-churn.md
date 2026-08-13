@@ -239,91 +239,234 @@ machinery across the three pools (pieces, squares, marks), and restore
 the bundle weighs at that point is the honest cost of the performance, and it
 gets locked in tightly again.
 
-### The re-gating promise is not reachable, and the ratio does not rescue it
+## The gatability criterion — a decision that needs an outside opinion
 
-An earlier draft of this plan claimed that fixing the update path would shrink
-`update-throughput-anim-off`'s noise enough for the next mint to re-gate it. That
-is not reachable as the rule is written. `assessGatability` in
-`.github/scripts/bench-report.mjs` tests **each subject's** CI half-width against
-an 8% cap, and the blocker is *chessground's*: 9.0% at the previous mint, 8.4% at
-this one. quadrum's own is 6.3% and already passes. Nothing shipped in this repo
-moves the denominator, so Phases B and C could land perfectly and the scenario
-would stay demoted.
+This section is written to be self-contained, because it is the one open question
+in this plan that is a judgement call rather than an engineering task. It states
+the mechanism, the measurement that refuted the first proposal, the numbers, how
+to reproduce them, what is still uncertain, and the three options.
 
-A previous revision of this section proposed assessing gatability on the
-**ratio's** CI half-width instead, on the premise that machine drift loads on
-both subjects and cancels out of the ratio. **That was measured against the
-minted baseline run and it is false.** The per-repetition figures, recomputed
-from `baseline-run.json` (n=61, the same values the shipped pipeline pools, and
-reproducing its per-subject numbers to within half a point):
+### What the gate does, in code
 
-| Scenario | quadrum | chessground | ratio |
+Two separate rules are in play, and conflating them is the mistake this section
+exists to correct.
+
+**Rule 1 — admission.** `assessGatability` in `.github/scripts/bench-report.mjs`
+decides whether a scenario is *allowed* to fail a build. It tests **each subject
+separately** against `MAX_GATED_CI_HALF_WIDTH` (0.08):
+
+```js
+// Rule 1: quadrum's CI half-width must not exceed 8% of its central value.
+const qHalfWidth = (q.ci95[1] - q.ci95[0]) / 2;
+const qRelative = Math.abs(safeRatio(qHalfWidth, q.value));
+
+if (Number.isFinite(qRelative) && q.value !== 0 && qRelative > MAX_GATED_CI_HALF_WIDTH) {
+	tooNoisy.push(`${scenario.id}/${metric.key}: quadrum CI half-width …`);
+}
+// Rule 2 repeats this verbatim for chessground.
+```
+
+A scenario failing either check is **demoted at mint** to reported-only: it still
+appears in the PR comment, it can never fail a build.
+
+**Rule 2 — the verdict.** `gateScenario` decides pass/warn/fail for an admitted
+scenario:
+
+```js
+const threshold = base.ratio * (1 + limits.tolerance);   // tolerance 0.15
+
+// Failing on the LOWER bound is deliberately asymmetric: noise buys a warn,
+// never a red X.
+if (exceeds(metric.comparison.ratioCi95[0], threshold)) {
+	return { status: "fail", … };
+}
+if (exceeds(metric.comparison.ratio, threshold)) {
+	return { status: "warn", … };   // does not block
+}
+return { status: "pass", … };
+```
+
+**The consequence that drives everything below:** failure requires the ratio's CI
+*lower* bound to clear the threshold. A wider interval pushes that bound down, so
+**noise here can only produce false passes — never false failures.**
+
+### The problem
+
+`update-throughput-anim-off` is the worst scenario in the suite (ratio 4.74, the
+one this whole plan exists to fix) and it is demoted. The blocker is Rule 1
+applied to *chessground*: 9.0% at the previous mint, 8.4% at this one. quadrum's
+own is 6.3% and passes. chessground is a pinned, unchanging dependency — nothing
+this repo ships moves that number, so Phases B–D could land perfectly and the
+scenario would stay demoted.
+
+### The first proposal, and its refutation
+
+An earlier revision of this section proposed assessing Rule 1 on the **ratio's**
+CI half-width instead of each subject's, reasoning that machine drift loads on
+both subjects and cancels out of the ratio. **Measured against the minted
+baseline run, that is false.** Per-repetition figures (n=61):
+
+| Scenario | quadrum | chessground | **ratio** |
 | --- | --- | --- | --- |
-| mount | 2.4% | 1.3% | 2.9% |
+| mount | 2.4% | 1.3% | **2.9%** |
 | update-throughput-anim-off | 5.9% | 8.8% | **13.8%** |
-| engine-arrow-tick | 3.0% | 4.1% | 4.7% |
-| drag-latency | 0.33% | 0.25% | 0.38% |
-| resize-storm | 7.1% | 1.3% | 5.7% |
+| engine-arrow-tick | 3.0% | 4.1% | **4.7%** |
+| drag-latency | 0.33% | 0.25% | **0.38%** |
+| resize-storm | 7.1% | 1.3% | **5.7%** |
 
-The ratio is **wider than either subject** in four of five scenarios. The reason
-is that the two subjects' per-repetition noise is uncorrelated — Pearson r
-between quadrum's and chessground's per-repetition values is −0.09, −0.25,
-−0.13, +0.06 and −0.05 across those scenarios, i.e. indistinguishable from zero.
-With r ≈ 0 the quotient's spread is `sqrt(cv_q² + cv_c²)`: the noises compound
-rather than cancel. Observed ratio spread matches that prediction to within a
-percentage point in every case (e.g. `update-throughput-anim-off`: 31.6% observed
-vs 30.7% predicted).
+The ratio is **wider than either subject in four of five scenarios**. The cause is
+that the two subjects' per-repetition noise is uncorrelated:
 
-This does **not** undermine the ratio-based gate, and the distinction matters.
-The ratio's justification is *between-run*: two different GitHub runners differ
-by 2–3× in absolute speed, and dividing cancels that. Within a single run on a
-single machine that factor is essentially constant, so it contributes no variance
-to cancel; what is left is independent per-repetition jitter, which division
-compounds. The gate is comparing ratios across runs, where the cancellation is
-real. The admission test is looking within one run, where it is not.
+| Scenario | corr(q,c) | cv quadrum | cv chessground | cv ratio | predicted |
+| --- | --- | --- | --- | --- | --- |
+| mount | −0.090 | 5.14% | 5.72% | 7.69% | 8.02% |
+| update-throughput-anim-off | −0.252 | 15.32% | 23.02% | 31.57% | 30.70% |
+| engine-arrow-tick | −0.130 | 11.01% | 15.04% | 19.28% | 19.76% |
+| drag-latency | +0.057 | 1.11% | 0.89% | 1.38% | 1.38% |
+| resize-storm | −0.052 | 51.62% | 4.73% | 52.06% | 52.08% |
 
-**The criterion is aimed at the wrong risk.** The gate fails only when the
-ratio's CI *lower* bound exceeds the threshold. A wider interval therefore pushes
-that bound *down* and makes a failure strictly **less** likely — noise can only
-produce false passes here, never false failures. The 8% cap is guarding against a
-failure mode the lower-bound rule already eliminates, and the price it charges is
-excluding the single most important scenario in the suite from the gate entirely.
+With correlation ≈ 0 the quotient's spread is `sqrt(cv_q² + cv_c²)` — the noises
+**compound** rather than cancel. Observed matches that prediction to within a
+percentage point in every scenario.
 
-What noise actually costs is *sensitivity*, and that is worth stating per
-scenario rather than hiding behind a binary gated/demoted flag. Solving
-`R * (1 - halfWidth) > 1.15` for the smallest detectable regression `R`:
+**This does not undermine the ratio-based gate**, and the distinction matters.
+The ratio's justification is *between-run*: two GitHub runners differ 2–3× in
+absolute speed and dividing cancels that. Within a single run on one machine that
+factor is essentially constant, contributing no variance to cancel; what remains
+is independent per-repetition jitter, which division compounds. The gate compares
+ratios across runs, where the cancellation is real. Rule 1 looks within one run,
+where it is not.
 
-| Scenario | gated | ratio CI half-width | smallest regression it catches |
-| --- | --- | --- | --- |
-| bundle-size | yes | 0.0% | +15% |
-| memory-leak | yes | 0.0% | +15% |
-| mount | yes | 2.8% | +18% |
-| engine-arrow-tick | yes | 7.4% | +24% |
-| resize-storm | no | 9.1% | +27% |
-| update-throughput-anim-off | no | 14.6% | +35% |
+### Three different quantities are called "the ratio CI"
+
+A reviewer will otherwise conclude one of the tables above is wrong. They are
+measuring different things, and each is correct for its purpose:
+
+1. **`ratioCi95` as shipped** (in `baseline.json`, used by Rule 2 and by the
+   sensitivity table below). A deliberately conservative worst-case combination —
+   `compareSubjects` pairs each subject's optimistic bound against the other's
+   pessimistic one (`qLo/cHi`, `qHi/cLo`). It is *designed* to be wider than
+   either part, so it cannot be used to test the cancellation claim.
+2. **The paired per-repetition bootstrap** (the 13.8% above). Bootstrap over the
+   61 per-repetition ratios. This is the quantity that would show cancellation if
+   cancellation existed, which is why the refutation uses it.
+3. **Each subject's own `ci95`** (used by Rule 1). Bootstrap over that subject's
+   pooled samples.
+
+### Noise costs sensitivity, not correctness
+
+Since a wide interval can only cause false passes, the honest thing to publish is
+what each scenario can still detect. Solving `R * (1 − halfWidth) > 1.15` for the
+smallest detectable regression `R`, using the shipped `ratioCi95`:
+
+| Scenario | gated | ratio | ratio CI half-width | smallest regression it catches |
+| --- | --- | --- | --- | --- |
+| bundle-size | yes | 0.882 | 0.0% | +15% |
+| memory-leak | yes | 1.000 | 0.0% | +15% |
+| update-throughput-anim-on | no | 1.000 | 0.0% | +15% |
+| drag-latency | no | 0.971 | 0.5% | +16% |
+| mount | yes | 1.286 | 2.8% | +18% |
+| engine-arrow-tick | yes | 1.911 | 7.4% | +24% |
+| resize-storm | no | 0.087 | 9.1% | +27% |
+| update-throughput-anim-off | **no** | 4.743 | 14.6% | **+35%** |
 
 A demoted scenario catches nothing, however tight its interval. Gating
-`update-throughput-anim-off` at its current noise would catch any regression
-above +35% — blunt, but a doubling of the update path would not pass unnoticed,
-which is exactly the failure this plan exists to prevent recurring.
+`update-throughput-anim-off` at its current noise would catch any regression above
++35% — blunt, but a doubling of the update path would not pass unnoticed, which is
+precisely the failure this plan exists to prevent recurring.
 
-Tightening it further is not affordable. The headline metric carries no
-within-repetition samples: it is one aggregate per repetition, already the total
-of 100 updates, so its noise is entirely between-repetition drift across fresh
-browser processes and no iteration count touches it. Interval width falls as
-`1/sqrt(reps)`, so reaching 8% on the ratio would need roughly 3× the
-repetitions — about 180, or some three hours of runner time per run.
+### Tightening it is not affordable
 
-**Decision for this plan:** keep the per-subject criterion, and stop treating
-re-gating `update-throughput-anim-off` as an outcome Phases B–D can deliver. The
-options, in preference order, are (1) drop the CI-width admission test for
-ratio-gated scenarios and publish the smallest-detectable-regression column
-above instead, so every scenario gates at whatever sensitivity it honestly has;
-(2) raise the cap to 10%, which admits this scenario now at +35% sensitivity and
-changes nothing else; (3) leave it demoted and rely on the reported-only number
-under human review. Option 1 is the honest one and is a change to
-`assessGatability` plus the report renderer, not to any measurement. It is
-independent of Phases B–D and should land on its own.
+The headline metric `update-total-script-ms` carries **no per-iteration samples**:
+it is one total per repetition, already the sum over 100 updates. Its noise is
+therefore entirely between-repetition drift across fresh browser processes, and
+no `iterations` count touches it.
+
+```
+quadrum      median 39.580 ms   between-repetition spread 15.32%   min/max 29.820 / 53.495
+chessground  median  8.345 ms   between-repetition spread 23.02%   min/max  5.070 / 14.345
+```
+
+Interval width falls as `1/sqrt(reps)`, so reaching 8% on the ratio needs roughly
+3× the repetitions — about 180, some three hours of runner time per run. Reaching
+8% on chessground alone needs ~68 reps, which would sit one bad run from demotion
+again.
+
+### Open questions a reviewer should press on
+
+These are stated as uncertain rather than settled:
+
+1. **The correlations are slightly negative, not merely zero** (−0.05 to −0.25).
+   Zero is what the independence argument predicts; consistently negative hints at
+   something structural in the ABBA interleave, where the two subjects alternate
+   within a repetition and one may systematically absorb a cost the other sheds.
+   It does not change the conclusion — negative correlation makes the ratio
+   *worse*, not better — but it may mean something that has not been chased down.
+2. **Only linear correlation was tested, only at the repetition level.** Drift
+   that is non-linear, or that lives at a different timescale (within a
+   repetition, or across the whole run), would not show up in these numbers.
+3. **`resize-storm` is the one scenario where the ratio beats the worst subject**
+   (5.7% vs quadrum's 7.1%). That is consistent with independence — chessground's
+   cv is tiny there, so the quotient is dominated by quadrum's — but it is the
+   single data point that superficially supports the refuted proposal, and a
+   reviewer will notice it.
+4. **The 8% cap and the 15% tolerance were both chosen by judgement**, not
+   derived. If the cap is replaced, the argument for whatever replaces it should
+   be better than the argument for 8% was.
+5. **n=61 is one run.** Every number here comes from a single minted baseline
+   (`run-1786622849122`, `workflow_dispatch`, 2026-08-13). The correlation
+   estimates in particular have real sampling error at that n.
+
+### Reproducing every number above
+
+The raw run is committed at `apps/bench/results/baseline-run.json` (the actual
+minted baseline, 61 repetitions), and the four scripts that produced these tables
+are in `apps/bench/analysis/`. They are standalone Python 3, no dependencies, and
+read only committed data:
+
+| Script | What it does |
+| --- | --- |
+| `ratio-ci-half-widths.py` | Rebuilds per-repetition values for both subjects, forms the paired ratio, and bootstraps a median CI for all three (4000 resamples, fixed seed). Produces the refutation table. Also prints the shipped per-subject numbers alongside, as a check that the reconstruction matches the pipeline. |
+| `subject-correlation.py` | Pearson correlation between the two subjects' per-repetition values, with each subject's coefficient of variation, the ratio's observed cv, and the cv predicted by first-order error propagation for a quotient. Produces the correlation table. |
+| `variance-split.py` | Splits `update-throughput-anim-off`'s noise into within- and between-repetition components, and reports the scenario's iteration settings. Establishes that more iterations cannot help. |
+| `detectable-regression.py` | Inverts the gate rule to the smallest detectable regression per scenario, from the shipped `ratioCi95`. Produces the sensitivity table. |
+
+Run them from that directory: `python3 ratio-ci-half-widths.py`, etc.
+
+**Validation.** `ratio-ci-half-widths.py`'s recomputed per-subject half-widths
+reproduce the shipped ones closely (`update-throughput-anim-off`: 5.85% vs 6.31%
+stored for quadrum, 8.78% vs 8.45% for chessground) — the reconstruction is
+measuring the same thing the pipeline does, so the ratio column sits on the same
+footing. The residual difference is bootstrap RNG and the pooling fallback: for
+metrics with no per-iteration samples, `poolSamples` falls back to the 61
+per-repetition values, which is exactly what these scripts use.
+
+### The decision
+
+Rule 2 is unchanged in all three options. They differ only in which scenarios are
+admitted by Rule 1.
+
+1. **Drop the CI-width admission test for ratio-gated scenarios; publish the
+   sensitivity column instead.** Every scenario gates at whatever sensitivity it
+   honestly has. `update-throughput-anim-off` starts gating at +35%. Cost: a
+   change to `assessGatability` and the report renderer, plus tests. No
+   measurement changes. Independent of Phases B–D; can land on its own.
+2. **Raise the cap to 10%.** One constant. Admits `update-throughput-anim-off`
+   (8.4%) and `resize-storm` (8.3%). Cheapest, but it is an arbitrary number
+   papering over a rule aimed at the wrong risk, and the next scenario to land at
+   10.5% reopens this.
+3. **Leave it demoted.** Zero work. A regression on quadrum's worst scenario
+   cannot fail a build; it would be caught by reading PR comments.
+
+**Recommendation: option 1**, on the grounds that Rule 1 is guarding against a
+failure mode Rule 2's lower-bound test already eliminates, and the sensitivity
+column is information the project does not currently have. The counter-argument
+worth weighing: option 1 lets scenarios that currently cannot fail a build start
+doing so, and widening the blast radius mid-plan has a cost of its own — option 3
+now, option 1 during Phase F is a defensible sequence.
+
+Either way, **stop treating re-gating `update-throughput-anim-off` as an outcome
+Phases B–D can deliver.** It is not one.
 
 ## Sequencing and risk notes
 

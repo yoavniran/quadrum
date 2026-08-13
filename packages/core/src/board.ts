@@ -14,6 +14,15 @@ import {
 	applyWrapState,
 	destroyDom,
 } from "./view/layout";
+import type { RenderParts } from "./view/renderParts";
+import {
+	ALL_PARTS,
+	MARKS_ONLY,
+	PIECES_AND_SQUARES,
+	SQUARES_ONLY,
+	dirtyParts,
+	mergeParts,
+} from "./view/renderParts";
 import type { MarkContext } from "./input/markInput";
 import type { MoveContext } from "./input/moveInput";
 import { createMarkController } from "./input/markInput";
@@ -140,7 +149,7 @@ export class Board implements MoveContext, MarkContext {
 
 	setSelected(square: Square | null): void {
 		this._state = applyOptions(this._state, { selected: square });
-		this.render();
+		this.render(SQUARES_ONLY);
 		if (this._state.select.onSelect) {
 			this._state.select.onSelect(square);
 		}
@@ -164,7 +173,7 @@ export class Board implements MoveContext, MarkContext {
 		if (!fromPiece) {
 			if (this._state.selected !== null) {
 				this._state = applyOptions(this._state, { selected: null });
-				this.render();
+				this.render(SQUARES_ONLY);
 			}
 			return;
 		}
@@ -195,7 +204,14 @@ export class Board implements MoveContext, MarkContext {
 				color: fromPiece.color,
 			};
 			// Render to show current state with picker
-			this.render();
+			this.render({
+				wrap: false,
+				coords: false,
+				pieces: false,
+				squares: true,
+				marks: false,
+				promotion: true,
+			});
 			return;
 		}
 
@@ -206,7 +222,7 @@ export class Board implements MoveContext, MarkContext {
 
 		// Clear selection
 		this._state = applyOptions(this._state, { selected: null });
-		this.render();
+		this.render(PIECES_AND_SQUARES);
 
 		if (this._state.moves.onPlayed) {
 			this._state.moves.onPlayed(from, to, { captured });
@@ -224,7 +240,7 @@ export class Board implements MoveContext, MarkContext {
 		if (this._state.locked) return;
 
 		this._state.pieces.delete(square);
-		this.render();
+		this.render(PIECES_AND_SQUARES);
 
 		if (this._state.onPositionChanged) {
 			this._state.onPositionChanged(this.placement());
@@ -235,7 +251,7 @@ export class Board implements MoveContext, MarkContext {
 		if (this._state.locked) return;
 
 		this._state.pieces.set(square, piece);
-		this.render();
+		this.render(PIECES_AND_SQUARES);
 
 		if (this._state.onPositionChanged) {
 			this._state.onPositionChanged(this.placement());
@@ -253,7 +269,7 @@ export class Board implements MoveContext, MarkContext {
 
 	commit(marks: Mark[]): void {
 		this._state = applyOptions(this._state, { marks: { user: marks } });
-		this.render();
+		this.render(MARKS_ONLY);
 
 		if (this._state.marks.onChange) {
 			this._state.marks.onChange(marks);
@@ -266,6 +282,11 @@ export class Board implements MoveContext, MarkContext {
 
 		// Apply options (rule 1: applies every option)
 		this._state = applyOptions(this._state, options);
+
+		// An options bag that touches nothing visual (sideToMove-only update, a
+		// handler swap) now renders nothing at all, which is the entire point of
+		// this phase.
+		const parts = dirtyParts(options);
 
 		// Handle animation (rule 5)
 		// Compare by value, not identity: applyOptions *always* clones the
@@ -288,8 +309,9 @@ export class Board implements MoveContext, MarkContext {
 				exclude: this.moveController.dragging ? null : undefined,
 			});
 
-			// Render at final positions immediately
-			this.render();
+			// Render at final positions immediately. The animation itself moves
+			// piece elements, so union in the piece layer.
+			this.render(mergeParts(parts, PIECES_AND_SQUARES));
 
 			// Prepare animation data for moves
 			const moveData = plan.moves.map((move) => {
@@ -388,7 +410,7 @@ export class Board implements MoveContext, MarkContext {
 				cleanup,
 			);
 		} else {
-			this.render();
+			this.render(parts);
 		}
 	}
 
@@ -428,12 +450,12 @@ export class Board implements MoveContext, MarkContext {
 
 	setUserMarks(marks: Mark[]): void {
 		this._state = applyOptions(this._state, { marks: { user: marks } });
-		this.render();
+		this.render(MARKS_ONLY);
 	}
 
 	setAutoMarks(marks: Mark[]): void {
 		this._state = applyOptions(this._state, { marks: { auto: marks } });
-		this.render();
+		this.render(MARKS_ONLY);
 	}
 
 	dragSparePiece(piece: Piece, event: PointerEvent): void {
@@ -468,15 +490,30 @@ export class Board implements MoveContext, MarkContext {
 		this.fadingEls = [];
 	}
 
-	private render(): void {
-		applyWrapState(this._dom, this._state);
-		renderCoords(this._dom, this._state);
-		renderPieces(this._dom.board, this._pieceEls, this._state);
+	/** Render dirty layers. Defaults to all parts: an unrouted caller must
+	 *  over-render, never under-render, because a missed layer is a visible bug
+	 *  while a spare layer is only slow. */
+	private render(parts: RenderParts = ALL_PARTS): void {
+		if (parts.wrap) {
+			applyWrapState(this._dom, this._state);
+		}
+		if (parts.coords) {
+			renderCoords(this._dom, this._state);
+		}
+		if (parts.pieces) {
+			renderPieces(this._dom.board, this._pieceEls, this._state);
+		}
 
-		this.renderSquares();
+		if (parts.squares) {
+			this.renderSquares();
+		}
 
-		this.renderMarks(null);
-		this.renderPromotion();
+		if (parts.marks) {
+			this.renderMarks(null);
+		}
+		if (parts.promotion) {
+			this.renderPromotion();
+		}
 	}
 
 	private renderSquares(): void {
@@ -538,7 +575,14 @@ export class Board implements MoveContext, MarkContext {
 				this._state.pieces.set(to, { color: piece.color, role });
 
 				this._state = applyOptions(this._state, { selected: null });
-				this.render();
+				this.render({
+					wrap: false,
+					coords: false,
+					pieces: true,
+					squares: true,
+					marks: false,
+					promotion: true,
+				});
 
 				if (this._state.moves.onPlayed) {
 					this._state.moves.onPlayed(from, to, {

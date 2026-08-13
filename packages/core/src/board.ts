@@ -18,6 +18,12 @@ import type { RenderParts } from "./view/renderParts";
 import {
 	ALL_PARTS,
 	MARKS_ONLY,
+	PART_COORDS,
+	PART_MARKS,
+	PART_PIECES,
+	PART_PROMOTION,
+	PART_SQUARES,
+	PART_WRAP,
 	PIECES_AND_SQUARES,
 	SQUARES_ONLY,
 	dirtyParts,
@@ -204,14 +210,7 @@ export class Board implements MoveContext, MarkContext {
 				color: fromPiece.color,
 			};
 			// Render to show current state with picker
-			this.render({
-				wrap: false,
-				coords: false,
-				pieces: false,
-				squares: true,
-				marks: false,
-				promotion: true,
-			});
+			this.render(PART_SQUARES | PART_PROMOTION);
 			return;
 		}
 
@@ -494,24 +493,24 @@ export class Board implements MoveContext, MarkContext {
 	 *  over-render, never under-render, because a missed layer is a visible bug
 	 *  while a spare layer is only slow. */
 	private render(parts: RenderParts = ALL_PARTS): void {
-		if (parts.wrap) {
+		if (parts & PART_WRAP) {
 			applyWrapState(this._dom, this._state);
 		}
-		if (parts.coords) {
+		if (parts & PART_COORDS) {
 			renderCoords(this._dom, this._state);
 		}
-		if (parts.pieces) {
+		if (parts & PART_PIECES) {
 			renderPieces(this._dom.board, this._pieceEls, this._state);
 		}
 
-		if (parts.squares) {
+		if (parts & PART_SQUARES) {
 			this.renderSquares();
 		}
 
-		if (parts.marks) {
+		if (parts & PART_MARKS) {
 			this.renderMarks(null);
 		}
-		if (parts.promotion) {
+		if (parts & PART_PROMOTION) {
 			this.renderPromotion();
 		}
 	}
@@ -575,14 +574,7 @@ export class Board implements MoveContext, MarkContext {
 				this._state.pieces.set(to, { color: piece.color, role });
 
 				this._state = applyOptions(this._state, { selected: null });
-				this.render({
-					wrap: false,
-					coords: false,
-					pieces: true,
-					squares: true,
-					marks: false,
-					promotion: true,
-				});
+				this.render(PIECES_AND_SQUARES | PART_PROMOTION);
 
 				if (this._state.moves.onPlayed) {
 					this._state.moves.onPlayed(from, to, {

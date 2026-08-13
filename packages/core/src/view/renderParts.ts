@@ -1,142 +1,90 @@
 // Board.render() used to re-run the entire pipeline (wrap, coords, pieces,
-// squares, marks, promotion) for every mutation. Profiling showed an arrow-only
-// change unnecessarily re-reconciling 32 unmoved piece elements. This table
-// lets each call site render only the layers it dirtied.
+// squares, marks, promotion) for every mutation, so an arrow-only change
+// re-reconciled 32 piece elements that never moved. This module lets each call
+// site render only the layers it dirtied.
+//
+// Two shapes here are chosen for size, not taste: this module is on the shipped
+// path and the bench gates bundle size absolutely, at +2% with no ratio to hide
+// behind. Parts are a bitmask rather than a `{ pieces: boolean, ... }` record --
+// the record form cost ~175 brotli bytes in nine six-field object literals that a
+// minifier cannot dedupe. And dirtyParts is a chain of branches rather than a
+// keyed lookup table -- the table plus its Object.keys/hasOwn loop cost a further
+// ~115 bytes, and it had to name the five options that dirty nothing just to tell
+// them apart from unknown keys.
+//
+// Dropping the table gives up its one real benefit: an option added to
+// BoardOptions without a matching branch here now falls through to NO_PARTS and
+// silently renders nothing. That check moved to renderParts.test.ts, which keeps
+// the exhaustive `Record<keyof BoardOptions, RenderParts>` and fails typecheck
+// when a new option appears. The guarantee survives; it just costs no bytes.
 
 import type { BoardOptions } from "../options";
 
-export interface RenderParts {
-	readonly wrap: boolean;
-	readonly coords: boolean;
-	readonly pieces: boolean;
-	readonly squares: boolean;
-	readonly marks: boolean;
-	readonly promotion: boolean;
-}
+/** A set of render parts, as a bitmask of the PART_* flags below. */
+export type RenderParts = number;
 
-export const ALL_PARTS: RenderParts = {
-	wrap: true,
-	coords: true,
-	pieces: true,
-	squares: true,
-	marks: true,
-	promotion: true,
-};
+export const PART_WRAP = 1;
+export const PART_COORDS = 2;
+export const PART_PIECES = 4;
+export const PART_SQUARES = 8;
+export const PART_MARKS = 16;
+export const PART_PROMOTION = 32;
 
-export const NO_PARTS: RenderParts = {
-	wrap: false,
-	coords: false,
-	pieces: false,
-	squares: false,
-	marks: false,
-	promotion: false,
-};
+export const NO_PARTS: RenderParts = 0;
+export const ALL_PARTS: RenderParts =
+	PART_WRAP | PART_COORDS | PART_PIECES | PART_SQUARES | PART_MARKS | PART_PROMOTION;
 
+export const SQUARES_ONLY: RenderParts = PART_SQUARES;
+export const MARKS_ONLY: RenderParts = PART_MARKS;
+export const PIECES_AND_SQUARES: RenderParts = PART_PIECES | PART_SQUARES;
+
+/** Union of two part sets. */
 export function mergeParts(a: RenderParts, b: RenderParts): RenderParts {
-	return {
-		wrap: a.wrap || b.wrap,
-		coords: a.coords || b.coords,
-		pieces: a.pieces || b.pieces,
-		squares: a.squares || b.squares,
-		marks: a.marks || b.marks,
-		promotion: a.promotion || b.promotion,
-	};
+	return a | b;
 }
-
-export const SQUARES_ONLY: RenderParts = {
-	wrap: false,
-	coords: false,
-	pieces: false,
-	squares: true,
-	marks: false,
-	promotion: false,
-};
-
-export const MARKS_ONLY: RenderParts = {
-	wrap: false,
-	coords: false,
-	pieces: false,
-	squares: false,
-	marks: true,
-	promotion: false,
-};
-
-export const PIECES_AND_SQUARES: RenderParts = {
-	wrap: false,
-	coords: false,
-	pieces: true,
-	squares: true,
-	marks: false,
-	promotion: false,
-};
-
-// Maps each known option key to the parts it dirties.
-const DIRTY_MAP: Record<keyof BoardOptions, RenderParts> = {
-	orientation: ALL_PARTS,
-	position: PIECES_AND_SQUARES,
-	checkSide: SQUARES_ONLY,
-	lastMove: SQUARES_ONLY,
-	selected: SQUARES_ONLY,
-	coordinates: {
-		wrap: false,
-		coords: true,
-		pieces: false,
-		squares: false,
-		marks: false,
-		promotion: false,
-	},
-	locked: {
-		wrap: true,
-		coords: false,
-		pieces: false,
-		squares: false,
-		marks: false,
-		promotion: false,
-	},
-	moves: SQUARES_ONLY,
-	marks: MARKS_ONLY,
-	promotion: {
-		wrap: false,
-		coords: false,
-		pieces: false,
-		squares: false,
-		marks: false,
-		promotion: true,
-	},
-	sideToMove: NO_PARTS,
-	select: NO_PARTS,
-	drag: NO_PARTS,
-	animate: NO_PARTS,
-	onPositionChanged: NO_PARTS,
-};
-
-// Which option keys are known and safe.
-const KNOWN_KEYS = new Set(Object.keys(DIRTY_MAP));
 
 /** Which render parts an options bag dirties.
  *
- * Only keys whose value is !== undefined count as present. Failing to ALL_PARTS
- * on an unknown key is deliberate: a new option that renders nothing is a silent
- * bug, a new option that over-renders is merely slow.
+ * Only keys whose value is !== undefined count as present -- callers routinely
+ * spread bags carrying explicit undefined. Options that render nothing
+ * (sideToMove, the handler and enabled-flag bags) are absent by falling through.
  */
 export function dirtyParts(options: BoardOptions): RenderParts {
-	let result: RenderParts = NO_PARTS;
-
-	for (const key of Object.keys(options)) {
-		const value = (options as Record<string, unknown>)[key];
-
-		// Skip keys explicitly set to undefined.
-		if (value === undefined) {
-			continue;
-		}
-
-		// Unknown key: bail to ALL_PARTS.
-		if (!KNOWN_KEYS.has(key)) {
-			return ALL_PARTS;
-		}
-
-		result = mergeParts(result, DIRTY_MAP[key as keyof BoardOptions]);
+	// Every layer is positioned by orientation, so nothing below can narrow it.
+	if (options.orientation !== undefined) {
+		return ALL_PARTS;
 	}
 
-	return result;
+	let parts = NO_PARTS;
+
+	// Squares read state.pieces for their check and target classes, so a position
+	// change dirties them too.
+	if (options.position !== undefined) {
+		parts |= PIECES_AND_SQUARES;
+	}
+	// checkSide/lastMove/selected drive square classes directly; moves does so
+	// through targets and showTargets.
+	if (
+		options.checkSide !== undefined ||
+		options.lastMove !== undefined ||
+		options.selected !== undefined ||
+		options.moves !== undefined
+	) {
+		parts |= PART_SQUARES;
+	}
+	if (options.coordinates !== undefined) {
+		parts |= PART_COORDS;
+	}
+	// applyWrapState is the only reader of locked.
+	if (options.locked !== undefined) {
+		parts |= PART_WRAP;
+	}
+	if (options.marks !== undefined) {
+		parts |= PART_MARKS;
+	}
+	if (options.promotion !== undefined) {
+		parts |= PART_PROMOTION;
+	}
+
+	return parts;
 }

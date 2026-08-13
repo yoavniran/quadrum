@@ -19,7 +19,7 @@
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.62.1",
-		"@types/node": "^24.10.1",
+		"@types/node": "^26.2.0",
 		"chessground": "9.2.1",
 		"overweight": "^2.2.0",
 		"typescript": "^7.0.2",

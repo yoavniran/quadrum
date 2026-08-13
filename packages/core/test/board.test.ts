@@ -52,7 +52,7 @@ describe("board", () => {
 		const pieces = container.querySelectorAll("qd-piece");
 		if (pieces.length > 0) {
 			const pieceEl = pieces[0] as HTMLElement;
-			pieceEl.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+			pieceEl.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, isPrimary: true }));
 			// The test passes if no error is thrown; rebinding would cause issues
 		}
 	});
@@ -239,7 +239,7 @@ describe("board", () => {
 		const press = () =>
 			container
 				.querySelector("qd-board")!
-				.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+				.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, isPrimary: true }));
 
 		press();
 		expect(board.state().marks.user).toHaveLength(0);

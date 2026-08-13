@@ -48,8 +48,22 @@ Measured against [chessground](https://github.com/lichess-org/chessground) 9.2.1
 dev-only dependency of the benchmark app and never shipped.
 
 <!-- bench:headline:start -->
-_No published run yet. The table below is generated from a scheduled benchmark run and spliced in
-between these markers; it will appear after the first nightly run lands._
+| Scenario | quadrum | chessground 9.2.1 | Ratio |
+| --- | --- | --- | --- |
+| Mount a full board | 1.26 ms | 1.01 ms | 1.25× — **chessground wins** |
+| 100 position updates, animation off | 29.65 ms | 6.62 ms | 4.48× — **chessground wins** |
+| 100 position updates, animation on | 16.67 ms | 16.67 ms | 1.00× — parity |
+| Engine arrow re-draw, per tick | 49.64 ms | 15.52 ms | 3.20× — **chessground wins** |
+| Drag latency, p95 | **18.60 ms** | 19.22 ms | **0.97× — quadrum wins** ✅ |
+| Resize storm, 50 resizes | **0.06 ms** | 0.81 ms | **0.08× — quadrum wins** ✅ |
+| Retention after teardown | 0 | 0 | 1.00× — parity |
+| Bundle size, min+brotli | **9.6 kB** | 11.1 kB | **0.87× — quadrum wins** ✅ |
+
+*Medians. Measured 2026-08-13 on linux/x64 (4 vCPU AMD EPYC 9V74 80-Core Processor), headless Chromium 151.0.7922.34, CPU throttled 4×, 15 repetitions interleaved. quadrum `0.2.2` @ `6573056` vs chessground `9.2.1`. "Parity" means the 95% confidence intervals overlap — a difference too small to claim.*
+
+- CPU throttle rate: 4
+- Headless has no real vsync; frame-derived metrics are advisory
+- Position-replay workload: three real games spliced to 200 half-moves (see apps/bench/src/data/game.ts)
 <!-- bench:headline:end -->
 
 Absolute milliseconds on a throttled shared runner are not desktop numbers; the ratios are the

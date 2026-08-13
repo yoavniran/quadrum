@@ -1,5 +1,16 @@
 # Kill the node churn: update path and arrow layer
 
+> **Revision 2 (2026-08-13).** Incorporates two external reviews of revision 1.
+> Both endorsed option 1 on the gatability question, which is now **decided**
+> (see "The gatability criterion — decided"). Their implementation flags are
+> folded into the phases: the piece-identity immutability invariant and
+> layout-neutrality as a phase-level measurement (Phase B), pool
+> grow-on-demand with hard caps and a shared pool module (Phases C–D), the SVG
+> gradient-units footgun (Phase D), WebKit containment verification (Phase E),
+> an expiry on the relaxed bundle tolerance, a caveat on Phase A's
+> machine-factor normalisation, and a statement of which environment is
+> authoritative for "done".
+
 ## Context
 
 The 61-rep benchmark (main @ `e1130fc`) leaves quadrum losing three scenarios to
@@ -125,6 +136,17 @@ like-for-like the tick went 66.8 → 39.3 ms: **~27.5 ms saved**, against this
 phase's predicted ~30 ms. The profile's diagnosis was correct and the fix landed
 the size it was scoped to.
 
+One caveat on that normalisation, flagged in review: chessground's slowdown was
+not uniform across scenarios (18–31%), so "the machine factor" is an
+approximation, not a constant — the ~27.5 ms figure is indicative and the
+direction of the result is the finding, not its second digit. The same
+observation bounds the broader claim that only ratios are comparable across
+runner speeds: if the two subjects respond differently to machine speed (GC
+pressure, JIT warmup behave differently per codebase), ratios are only
+*approximately* machine-invariant. The gate's 15% tolerance is what absorbs
+that approximation, and it is worth keeping in mind whenever a ratio moves a
+few percent between mints.
+
 `update-throughput-anim-off` staying flat is the expected result, not a miss:
 the bench update loop passes `position` on every update, which dirties pieces
 *and* squares, so routing sends it to exactly the work it was already doing.
@@ -160,14 +182,51 @@ creation + GC pressure) and the 3.3× layout gap. Risk: medium — the drag-laye
 first (the current `renderPieces` comments document exactly which ghosts to
 fear).
 
+**Implemented** in `2bdd82d` on this branch (bench run and PR pending). Two
+invariants raised in review, both checked against the implementation and now
+pinned as rules rather than accidents:
+
+- **Piece identity is immutable per element.** Every `dataset.piece` write site
+  also writes the WeakMap, and the reuse matcher pairs squares only on
+  identical color *and* role — so a promotion is structurally remove+create and
+  no live element's piece identity ever mutates in place. The invariant going
+  forward: any write to `dataset.piece` must also update the registry, and no
+  code path may rewrite it on an element already on the board. A promotion
+  path that mutated an element in place would leave the WeakMap serving the
+  pawn forever, and nothing would crash — it would just be quietly wrong.
+- **Move writes are layout-neutral by construction.** `placePieceEl` positions
+  exclusively via `style.transform`; no box property is touched on the update
+  path. That is what licenses the "nothing to lay out" claim above — and
+  rather than trusting it, `update-total-layout-ms` is a **phase-level**
+  acceptance number for this phase (and Phase C), not only a plan-level one.
+  The mutation census counts nodes, not layout invalidations, so it cannot
+  catch a style or class write that dirties layout anyway.
+
 ### Phase C — persistent highlight squares
 
 `renderSquares` keeps a pool of `qd-square` elements instead of
 creating/removing per update. An element that leaves the decoration set is
 hidden (class toggle), not removed; one that enters reuses a pooled node and
-gets a transform + `className` write — chessground-style, 6 elements for the
-lifetime of the board instead of 2 per update. Pool is torn down in `unmount()`
-so the memory-leak invariant (0 retained nodes) holds. Risk: low.
+gets a transform + `className` write — chessground-style, a handful of
+persistent elements instead of 2 created + 2 removed per update. Three
+constraints from review:
+
+- **The pool grows on demand and is hard-capped.** Don't hard-size it to
+  chessground's 6 — quadrum's decoration set is not guaranteed to match
+  chessground's. Cap it at 64 (one per board square is the physical maximum)
+  so a consumer that never calls `unmount()` — a reactive-framework wrapper
+  dropping the teardown on a fast re-render or HMR — leaks a bounded pool, not
+  an unbounded one. The pool still drains in `unmount()`, so the memory-leak
+  invariant (0 retained nodes) holds on the measured path.
+- **`className` writes are not automatically free.** Class changes can
+  invalidate layout depending on what the classes touch, and the census cannot
+  see that — so `update-total-layout-ms` is this phase's acceptance number
+  too.
+- **The pool mechanics live in one small module**, shared with Phase D's node
+  pool where the shapes genuinely coincide, so Phase F's size pass finds one
+  pool factory rather than three entangled ones it has to painfully decouple.
+
+Risk: low.
 
 ### Phase D — arrow layer: node recycling and a pen-keyed gradient cache
 
@@ -186,12 +245,28 @@ remaining cost is attribute writes and geometry, where the profile shows
 chessground's own budget lives. Risk: medium — SVG gradient orientation via
 `gradientTransform` needs a visual check in the demo, not just numbers.
 
+Two review flags, both load-bearing:
+
+- **Gradient units are the footgun.** A per-pen gradient reoriented per-arrow
+  behaves entirely differently under `objectBoundingBox` (the SVG default) vs
+  `userSpaceOnUse` units — and a perfectly horizontal or vertical arrow has a
+  degenerate zero-height or zero-width bounding box, in which
+  `objectBoundingBox` gradients simply do not render. Use `userSpaceOnUse`,
+  and the visual check must specifically cover axis-aligned arrows (along a
+  file, along a rank) and knight-move arrows if the geometry is
+  polyline-based. This is the likeliest silent visual regression in the plan.
+- **The recycle pool is capped** (32 nodes) for the same missed-`unmount()`
+  reason as Phase C's, and built on the same shared pool module.
+
 ### Phase E (experiment) — containment for mount layout
 
 Add `contain: layout style` to `qd-board` and `contain: strict` (or `content`)
 to the mark SVGs, then measure mount + resize + drag on the bench page. Adopt
 only what moves mount layout without regressing resize-storm (quadrum's biggest
 win — do not trade it away) or breaking the promotion overlay's paint order.
+WebKit has a history of edge-case bugs around containment and stacking
+contexts, so the promotion overlay's paint order must be verified in Safari
+(or the Playwright WebKit project) explicitly, not extrapolated from Chromium.
 If containment does nothing, accept mount at 1.23× for now; Phase B may already
 shrink it since mount's first render also pays per-element layout.
 
@@ -213,6 +288,12 @@ as the profile:
 
 Then: a full `workflow_dispatch` bench run at 61 reps, and a re-mint.
 
+**Which environment is authoritative:** the two environments have already
+disagreed by ~25% in this document, so the local bench page is the development
+instrument and the **61-rep CI run is the authority** — "done" is declared on
+the CI ratios, and the local numbers only decide when a phase is worth spending
+a CI run on.
+
 ### Bundle size is deliberately relaxed until Phase D lands
 
 Phase A cost 155 brotli bytes for what is essentially routing, and only fit
@@ -230,6 +311,12 @@ constraint on how these phases are written. **Phase F below restores it.**
 Performance is the thing being bought here; bytes are the thing being spent, and
 the accounting happens once at the end rather than four times mid-flight.
 
+The relaxation has an expiry, so it cannot quietly become the new normal if the
+plan stalls mid-phase: it lasts until Phase F lands or **2026-11-15**,
+whichever comes first. Past that date the tolerance reverts to 0.02, and
+staying relaxed requires a conscious, dated re-decision recorded in this
+document.
+
 ### Phase F — the size pass, after D
 
 With all four phases landed and measured, revisit size as its own exercise:
@@ -239,12 +326,15 @@ machinery across the three pools (pieces, squares, marks), and restore
 the bundle weighs at that point is the honest cost of the performance, and it
 gets locked in tightly again.
 
-## The gatability criterion — a decision that needs an outside opinion
+## The gatability criterion — decided
 
-This section is written to be self-contained, because it is the one open question
-in this plan that is a judgement call rather than an engineering task. It states
-the mechanism, the measurement that refuted the first proposal, the numbers, how
-to reproduce them, what is still uncertain, and the three options.
+This section was written to be self-contained for outside review, and two
+independent reviews came back. **Both endorsed option 1** (drop the CI-width
+admission test, publish sensitivity), disagreeing only on timing. The decision
+and its record close the section; the analysis before it is kept in full
+because it is the evidence the decision rests on. It states the mechanism, the
+measurement that refuted the first proposal, the numbers, how to reproduce
+them, and what is still uncertain.
 
 ### What the gate does, in code
 
@@ -441,38 +531,77 @@ footing. The residual difference is bootstrap RNG and the pooling fallback: for
 metrics with no per-iteration samples, `poolSamples` falls back to the 61
 per-repetition values, which is exactly what these scripts use.
 
-### The decision
+### The decision — option 1, landed now, with two amendments
 
-Rule 2 is unchanged in all three options. They differ only in which scenarios are
-admitted by Rule 1.
+Rule 2 is unchanged. The options considered were: **(1)** drop the CI-width
+admission test for ratio-gated scenarios and publish the sensitivity column,
+**(2)** raise the cap to 10%, **(3)** leave the scenario demoted. Both reviews
+rejected 2 as an arbitrary line that reopens at the next 10.5% scenario, and 3
+as accepting a blind spot on the suite's most important scenario. **Option 1
+is adopted.**
 
-1. **Drop the CI-width admission test for ratio-gated scenarios; publish the
-   sensitivity column instead.** Every scenario gates at whatever sensitivity it
-   honestly has. `update-throughput-anim-off` starts gating at +35%. Cost: a
-   change to `assessGatability` and the report renderer, plus tests. No
-   measurement changes. Independent of Phases B–D; can land on its own.
-2. **Raise the cap to 10%.** One constant. Admits `update-throughput-anim-off`
-   (8.4%) and `resize-storm` (8.3%). Cheapest, but it is an arbitrary number
-   papering over a rule aimed at the wrong risk, and the next scenario to land at
-   10.5% reopens this.
-3. **Leave it demoted.** Zero work. A regression on quadrum's worst scenario
-   cannot fail a build; it would be caught by reading PR comments.
+**Timing: now, not Phase F.** The reviews split here — one said land it before
+the render-path phases, the other said defer to Phase F to avoid widening the
+blast radius mid-plan. The first has the risk window right: the moment gating
+`update-throughput-anim-off` matters most is exactly while the update path is
+being structurally rewritten (Phase B is already on this branch; C and D are
+next). A +35% detection floor is blunt, but the realistic bad outcome during
+these phases is precisely a large regression — a botched diff path that
+doubles update cost — and a blunt gate catches that. Deferring to F delivers
+the gate after the risk has passed. The blast-radius concern is answered by
+sequencing, not deferral: the gate change lands as **its own PR**, gets a
+re-mint, is confirmed green under the new rule, and only then do Phases C–D
+start — so a red X during C–D is attributable to one change, not two.
 
-**Recommendation: option 1**, on the grounds that Rule 1 is guarding against a
-failure mode Rule 2's lower-bound test already eliminates, and the sensitivity
-column is information the project does not currently have. The counter-argument
-worth weighing: option 1 lets scenarios that currently cannot fail a build start
-doing so, and widening the blast radius mid-plan has a cost of its own — option 3
-now, option 1 during Phase F is a defensible sequence.
+Two amendments to option 1 as originally specified, both from review:
 
-Either way, **stop treating re-gating `update-throughput-anim-off` as an outcome
-Phases B–D can deliver.** It is not one.
+1. **Demote the noise signal to a label, don't delete it.** The PR comment
+   renders a badge next to the verdict — "low-sensitivity gate (catches ≥
+   +35%)" — so a green check on a noisy scenario reads as "no catastrophic
+   regression", not "fine". The sensitivity number sits beside the verdict,
+   not in a separate table nobody opens.
+2. **Keep a usefulness floor.** A scenario whose gate cannot detect anything
+   below +100% is theater and still demotes. That is a principled Rule 1 —
+   admission by usefulness of the gate, which is a risk that actually exists —
+   replacing admission by CI width, which is not.
+
+Two entries for the decision record:
+
+- **The asymmetry of consequences is a second, independent argument for
+  option 1**, which revision 1 did not make explicitly. The "noise can only
+  cause false passes" claim assumes the bootstrap CIs are calibrated, and open
+  questions 1, 2 and 5 above mean they might not be — a mis-calibrated
+  interval could in principle false-fail. But a false fail costs a re-run
+  (cheap, and on the record); a false pass ships a regression. Even under the
+  pessimistic reading of the caveats, option 1 sits on the right side of that
+  trade.
+- **Non-blocking follow-up:** the consistently negative correlations deserve
+  one cheap experiment — run one scenario with AABB ordering instead of ABBA
+  and see whether the correlation moves toward zero. If ABBA adjacency couples
+  the subjects (cache or GC interference between adjacent measurements), the
+  per-repetition samples are not independent and every bootstrap here is
+  slightly off. Nothing blocks on it.
+
+One question stays open for the maintainer, raised in review: if the
+no-animation update path's sensitivity stays pinned near +35% long-term, is a
+dedicated (bare-metal or larger) benchmark runner worth exploring, or is the
+blind spot an acceptable price for GitHub-hosted runners? The plan's default
+is to accept it and revisit at Phase F with post-optimization numbers — if
+Phases B–D bring the ratio near 1, the scenario's variance profile changes
+too, and the question may answer itself.
+
+With option 1 landed, `update-throughput-anim-off` is gated again — by the
+gate change, not by anything Phases B–D do to the code. Improving its
+*sensitivity* beyond +35% would take ~3× the repetitions or a quieter runner;
+neither is part of this plan.
 
 ## Sequencing and risk notes
 
-- Order: A → B → C → D → F, with E measured alongside. A first because it makes
-  B–D measurable in isolation (an arrow tick that still runs `renderPieces` hides
-  Phase D's effect); F last because a size pass over four phases at once can find
+- Order: A → B → **Rule 1 gate change (own PR + re-mint)** → C → D → F, with E
+  measured alongside. A first because it makes B–D measurable in isolation (an
+  arrow tick that still runs `renderPieces` hides Phase D's effect); the gate
+  change before C–D so the update path is under a working gate while it is
+  being rewritten; F last because a size pass over four phases at once can find
   shared machinery that four separate size passes cannot.
 - The animation path shares `planDiff` and the piece-element map with Phase B —
   its tests (glide/fade/appear, interrupted animation cleanup) are the

@@ -341,6 +341,10 @@ them, and what is still uncertain.
 Two separate rules are in play, and conflating them is the mistake this section
 exists to correct.
 
+> This subsection describes the code **as it stood when the decision was taken**.
+> `MAX_GATED_CI_HALF_WIDTH` and the two blocks quoted below no longer exist — see
+> "The decision" at the end of the section for what replaced them.
+
 **Rule 1 — admission.** `assessGatability` in `.github/scripts/bench-report.mjs`
 decides whether a scenario is *allowed* to fail a build. It tests **each subject
 separately** against `MAX_GATED_CI_HALF_WIDTH` (0.08):
@@ -532,6 +536,13 @@ metrics with no per-iteration samples, `poolSamples` falls back to the 61
 per-repetition values, which is exactly what these scripts use.
 
 ### The decision — option 1, landed now, with two amendments
+
+**Implemented in `e6cd702`.** `MAX_GATED_CI_HALF_WIDTH` and both per-subject
+blocks are gone; `detectableRegression()` plus `MAX_GATED_DETECTABLE_REGRESSION`
+(+100%) are the new admission rule, every minted scenario stores its
+`sensitivity`, and `renderGateSummary` publishes it as a column. The timer-floor
+and zero-width-CI checks survive unchanged — they catch an instrument artifact,
+not noise. The baseline still needs re-minting for the demotion to lift.
 
 Rule 2 is unchanged. The options considered were: **(1)** drop the CI-width
 admission test for ratio-gated scenarios and publish the sensitivity column,

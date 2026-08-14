@@ -51,8 +51,9 @@ export const DEFAULT_BUNDLE_TOLERANCE = 0.12;
  */
 export const DEFAULT_SANITY_DRIFT_FACTOR = 2.5;
 
-/** A gated scenario's CI half-width may not exceed this fraction of its median. */
-export const MAX_GATED_CI_HALF_WIDTH = 0.08;
+/** A gated scenario must be able to detect a regression at or below this
+ *  fraction over baseline, or gating it is theatre rather than a gate. */
+export const MAX_GATED_DETECTABLE_REGRESSION = 1.0;
 
 /**
  * Minimum number of timer ticks for a gated metric's central value. 20 ticks (0.1 ms)
@@ -117,6 +118,41 @@ function exceeds(value, threshold) {
 	}
 
 	return value - threshold > Math.abs(threshold) * 1e-9;
+}
+
+/**
+ * The smallest regression a scenario can still detect, as a multiplier over
+ * baseline (1.35 = "+35% or worse"). Returns null when the interval is so wide
+ * that no regression is detectable at all.
+ *
+ * @param {number} ratio
+ * @param {[number, number]} ratioCi95
+ * @param {number} tolerance
+ * @returns {number | null}
+ */
+export function detectableRegression(ratio, ratioCi95, tolerance) {
+	if (!Number.isFinite(ratio) || ratio === 0) {
+		return null;
+	}
+
+	if (!ratioCi95 || !Number.isFinite(ratioCi95[0]) || !Number.isFinite(ratioCi95[1])) {
+		return null;
+	}
+
+	const halfWidth = (ratioCi95[1] - ratioCi95[0]) / 2;
+	const h = Math.abs(halfWidth / ratio);
+
+	if (h >= 1) {
+		return null;
+	}
+
+	const detectable = (1 + tolerance) / (1 - h);
+
+	if (!Number.isFinite(detectable)) {
+		return null;
+	}
+
+	return detectable;
 }
 
 /**
@@ -375,17 +411,6 @@ export function summarizeRun(record, options = {}) {
 }
 
 /**
- * Reduce a summary to the small, stable document the gate compares against.
- *
- * Only the headline metric of each scenario is kept, because that is the only
- * number gated -- a baseline that stored everything would invite gating
- * whichever metric happened to look good later.
- *
- * @param {any} summary
- * @returns {any} baseline document
- * @throws when a gated scenario is too noisy to gate honestly
- */
-/**
  * The central value and interval a metric actually publishes, per its declared
  * statistic. The baseline must be minted, guarded and stored against the same
  * statistic the ratio was computed from -- storing a median beside a p95-derived
@@ -401,7 +426,20 @@ function centralOf(subject, statistic = "median") {
 		: { value: subject.median, ci95: subject.ci95 ?? [NaN, NaN] };
 }
 
-export function makeBaseline(summary) {
+/**
+ * Reduce a summary to the small, stable document the gate compares against.
+ *
+ * Only the headline metric of each scenario is kept, because that is the only
+ * number gated -- a baseline that stored everything would invite gating
+ * whichever metric happened to look good later.
+ *
+ * @param {any} summary
+ * @param {{ tolerance?: number }} [options]
+ * @returns {any} baseline document
+ * @throws when a gated scenario is too noisy to gate honestly
+ */
+export function makeBaseline(summary, options = {}) {
+	const tolerance = options.tolerance ?? DEFAULT_TOLERANCE;
 	/** @type {Map<string, string[]>} */
 	const noiseByScenario = new Map();
 	/** @type {string[]} */
@@ -420,6 +458,15 @@ export function makeBaseline(summary) {
 		const q = centralOf(metric.quadrum, statistic);
 		const c = centralOf(metric.chessground, statistic);
 
+		// Compute sensitivity for every scenario, gated or not. For bundle-size,
+		// the published sensitivity is indicative rather than its actual gate,
+		// since it is gated absolutely against a tighter tolerance.
+		const sensitivity = detectableRegression(
+			metric.comparison.ratio,
+			metric.comparison.ratioCi95,
+			tolerance,
+		);
+
 		if (scenario.gated) {
 			/** @type {string[]} */
 			const tooNoisy = [];
@@ -427,38 +474,12 @@ export function makeBaseline(summary) {
 			if (metric.unit === "ms") {
 				gatedTimingIds.push(scenario.id);
 			}
-			// Rule 1: quadrum's CI half-width must not exceed 8% of its central value.
-			const qHalfWidth = (q.ci95[1] - q.ci95[0]) / 2;
-			const qRelative = Math.abs(safeRatio(qHalfWidth, q.value));
 
-			// A gate whose baseline is noisier than its own tolerance is not a
-			// gate, it is a coin flip that occasionally blocks a PR. Zero-valued
-			// invariants (retained nodes) are exempt: their spread is zero and
-			// the ratio is undefined, not large.
-			if (Number.isFinite(qRelative) && q.value !== 0 && qRelative > MAX_GATED_CI_HALF_WIDTH) {
-				tooNoisy.push(
-					`${scenario.id}/${metric.key}: quadrum CI half-width ${(qRelative * 100).toFixed(1)}% of ${statistic} (max ${MAX_GATED_CI_HALF_WIDTH * 100}%)`,
-				);
-			}
-
-			// Rule 2: chessground's CI half-width must not exceed 8% of its central
-			// value (same rule). The ratio has a denominator, and two of the three
-			// gated timing metrics in the first minted baseline had a chessground CI
-			// width of exactly zero -- unchecked, because this rule did not exist.
-			const cHalfWidth = (c.ci95[1] - c.ci95[0]) / 2;
-			const cRelative = Math.abs(safeRatio(cHalfWidth, c.value));
-
-			if (Number.isFinite(cRelative) && c.value !== 0 && cRelative > MAX_GATED_CI_HALF_WIDTH) {
-				tooNoisy.push(
-					`${scenario.id}/${metric.key}: chessground CI half-width ${(cRelative * 100).toFixed(1)}% of ${statistic} (max ${MAX_GATED_CI_HALF_WIDTH * 100}%)`,
-				);
-			}
-
-			// Rules 3 & 4: only for timing metrics (unit "ms").
+			// Rules 1 & 2: only for timing metrics (unit "ms").
 			if (metric.unit === "ms") {
 				const minMedianMs = MIN_GATED_MEDIAN_TICKS * TIMER_RESOLUTION_MS;
 
-				// Rule 3: neither subject's central value may sit within a few ticks
+				// Rule 1: neither subject's central value may sit within a few ticks
 				// of the timer floor. Below that, the ratio is real-over-quantized:
 				// the denominator can only move in 5us steps, so it reports a
 				// precision the instrument does not have.
@@ -474,11 +495,10 @@ export function makeBaseline(summary) {
 					);
 				}
 
-				// Rule 4: zero-width CI with n > 1 is quantization, not precision --
+				// Rule 2: zero-width CI with n > 1 is quantization, not precision --
 				// resampling a median that sits on a single tick returns that tick
 				// nearly every time, however far the true value roams between runs.
-				// Genuinely constant invariants (central value === 0) stay exempt,
-				// matching the zero-value carve-out on rules 1 and 2.
+				// Genuinely constant invariants (central value === 0) stay exempt.
 				const qCIWidth = q.ci95[1] - q.ci95[0];
 				if (qCIWidth === 0 && q.value !== 0 && metric.quadrum.n > 1) {
 					tooNoisy.push(
@@ -492,6 +512,18 @@ export function makeBaseline(summary) {
 						`${scenario.id}/${metric.key}: chessground CI width is exactly zero with n=${metric.chessground.n} (quantization, not precision)`,
 					);
 				}
+			}
+
+			// Rule 3: a scenario whose gate cannot detect anything below
+			// MAX_GATED_DETECTABLE_REGRESSION is theatre and demotes.
+			if (sensitivity === null) {
+				tooNoisy.push(
+					`${scenario.id}/${metric.key}: cannot detect any regression (interval too wide)`,
+				);
+			} else if (sensitivity - 1 > MAX_GATED_DETECTABLE_REGRESSION) {
+				tooNoisy.push(
+					`${scenario.id}/${metric.key}: can only detect a regression of +${((sensitivity - 1) * 100).toFixed(0)}% or worse (max +${MAX_GATED_DETECTABLE_REGRESSION * 100}%)`,
+				);
 			}
 
 			if (tooNoisy.length > 0) {
@@ -511,6 +543,7 @@ export function makeBaseline(summary) {
 			// holds whichever statistic the metric declares -- `statistic` says which.
 			quadrum: { median: q.value, ci95: q.ci95 },
 			chessground: { median: c.value, ci95: c.ci95 },
+			sensitivity,
 		};
 	}
 
@@ -706,7 +739,12 @@ export function compareToBaseline(summary, baseline, options = {}) {
 		}
 
 		if (!scenario.gated) {
-			results.push({ scenarioId: scenario.id, status: "reported", reason: "not gated" });
+			results.push({
+				scenarioId: scenario.id,
+				status: "reported",
+				reason: "not gated",
+				sensitivity: base.sensitivity ?? null,
+			});
 			continue;
 		}
 
@@ -720,6 +758,7 @@ export function compareToBaseline(summary, baseline, options = {}) {
 				reason: base.demotedReason
 					? `not gated: demoted at mint (${base.demotedReason})`
 					: "not gated: the baseline does not gate this scenario",
+				sensitivity: base.sensitivity ?? null,
 			});
 			continue;
 		}
@@ -762,6 +801,7 @@ function gateScenario(scenario, base, limits) {
 			status: "fail",
 			reason: `baseline metric ${base.headlineMetric} is missing from the results`,
 			remeasurable: false,
+			sensitivity: base.sensitivity ?? null,
 		};
 	}
 
@@ -785,6 +825,7 @@ function gateScenario(scenario, base, limits) {
 				`baseline gates ${base.headlineMetric}, but this scenario now headlines ` +
 				`${scenario.headlineMetric}; the baseline predates the change and must be re-minted`,
 			remeasurable: false,
+			sensitivity: base.sensitivity ?? null,
 		};
 	}
 
@@ -808,8 +849,8 @@ function gateScenario(scenario, base, limits) {
 		});
 
 		return retained.length > 0
-			? { scenarioId: scenario.id, status: "fail", reason: `retention is not zero: ${retained.join(", ")}` }
-			: { scenarioId: scenario.id, status: "pass", reason: "no retention on either subject" };
+			? { scenarioId: scenario.id, status: "fail", reason: `retention is not zero: ${retained.join(", ")}`, sensitivity: base.sensitivity ?? null }
+			: { scenarioId: scenario.id, status: "pass", reason: "no retention on either subject", sensitivity: base.sensitivity ?? null };
 	}
 
 	// Bundle size is gated absolutely, and tightly, because it has zero runtime
@@ -822,8 +863,8 @@ function gateScenario(scenario, base, limits) {
 		const detail = `quadrum ${base.headlineMetric} ${formatValue(observed, metric.unit)} vs baseline ${formatValue(baseValue, metric.unit)} (${(growth * 100).toFixed(1)}%)`;
 
 		return exceeds(growth, limits.bundleTolerance)
-			? { scenarioId: scenario.id, status: "fail", reason: `bundle grew beyond ${limits.bundleTolerance * 100}%: ${detail}` }
-			: { scenarioId: scenario.id, status: "pass", reason: detail };
+			? { scenarioId: scenario.id, status: "fail", reason: `bundle grew beyond ${limits.bundleTolerance * 100}%: ${detail}`, sensitivity: base.sensitivity ?? null }
+			: { scenarioId: scenario.id, status: "pass", reason: detail, sensitivity: base.sensitivity ?? null };
 	}
 
 	// Environment sanity: if chessground's own absolute number has moved a long
@@ -836,6 +877,7 @@ function gateScenario(scenario, base, limits) {
 			scenarioId: scenario.id,
 			status: "inconclusive",
 			reason: `chessground's absolute drifted ${drift.toFixed(2)}x from baseline; the environment is not comparable`,
+			sensitivity: base.sensitivity ?? null,
 		};
 	}
 
@@ -846,7 +888,7 @@ function gateScenario(scenario, base, limits) {
 	// never a red X. False failures destroy trust in a gate faster than false
 	// passes destroy a codebase.
 	if (exceeds(metric.comparison.ratioCi95[0], threshold)) {
-		return { scenarioId: scenario.id, status: "fail", reason: `regression: ${detail}` };
+		return { scenarioId: scenario.id, status: "fail", reason: `regression: ${detail}`, sensitivity: base.sensitivity ?? null };
 	}
 
 	if (exceeds(metric.comparison.ratio, threshold)) {
@@ -854,10 +896,11 @@ function gateScenario(scenario, base, limits) {
 			scenarioId: scenario.id,
 			status: "warn",
 			reason: `possible regression, interval too wide to confirm: ${detail}`,
+			sensitivity: base.sensitivity ?? null,
 		};
 	}
 
-	return { scenarioId: scenario.id, status: "pass", reason: detail };
+	return { scenarioId: scenario.id, status: "pass", reason: detail, sensitivity: base.sensitivity ?? null };
 }
 
 /**
@@ -1095,13 +1138,20 @@ export function renderGateSummary(gate) {
 	const lines = [
 		`### Benchmark gate: ${gate.ok ? "pass" : "fail"}${gate.overridden ? " (overridden)" : ""}`,
 		"",
-		"| Scenario | Status | Detail |",
-		"| --- | --- | --- |",
+		"| Scenario | Status | Sensitivity | Detail |",
+		"| --- | --- | --- | --- |",
 	];
 
 	for (const result of gate.results) {
+		// Loose equality on purpose: results that never reach a baseline entry
+		// (advisory, skipped, an assertion failure) carry no sensitivity at all,
+		// and an undefined here would render as "+NaN%".
+		const sensitivityText = result.sensitivity == null
+			? "—"
+			: `≥ +${Math.round((result.sensitivity - 1) * 100)}%`;
+
 		lines.push(
-			`| ${escapeCell(result.scenarioId)} | ${STATUS_ICON[result.status] ?? ""} ${result.status} | ${escapeCell(result.reason)} |`,
+			`| ${escapeCell(result.scenarioId)} | ${STATUS_ICON[result.status] ?? ""} ${result.status} | ${sensitivityText} | ${escapeCell(result.reason)} |`,
 		);
 	}
 

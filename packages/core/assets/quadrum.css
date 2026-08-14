@@ -38,6 +38,13 @@ qd-square {
 	z-index: 1;
 }
 
+/* Undecorated squares are kept in the DOM and reused rather than removed, so
+   they must be hidden explicitly: any consumer rule that sets `display` on
+   qd-square would otherwise beat the UA sheet's [hidden] and paint them. */
+qd-square[hidden] {
+	display: none;
+}
+
 qd-piece {
 	z-index: 3;
 	pointer-events: none;

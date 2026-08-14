@@ -38,7 +38,9 @@ import {
 } from "./view/piecesView";
 import {
 	renderSquares,
+	SQUARE_POOL_CAPACITY,
 } from "./view/squaresView";
+import { createNodePool } from "./view/nodePool";
 import {
 	renderMarks,
 } from "./view/marksView";
@@ -57,6 +59,7 @@ export class Board implements MoveContext, MarkContext {
 	private _dom: BoardDom;
 	private _pieceEls: Map<Square, HTMLElement> = new Map();
 	private squareEls: Map<Square, HTMLElement> = new Map();
+	private squarePool = createNodePool<HTMLElement>(SQUARE_POOL_CAPACITY);
 	/** The square a drag is currently over. Lives outside `_state` because it
 	 *  changes on every pointermove and concerns only the square layer. */
 	private hoverSquare: Square | null = null;
@@ -469,6 +472,9 @@ export class Board implements MoveContext, MarkContext {
 		this._dom = buildDom(this.container);
 		this._pieceEls.clear();
 		this.squareEls.clear();
+		// The pooled squares belong to the DOM just destroyed; keeping them would
+		// hand the next render elements that are no longer attached to anything.
+		this.squarePool.drain();
 		this.render();
 	}
 
@@ -483,6 +489,8 @@ export class Board implements MoveContext, MarkContext {
 		this.animator.cancel();
 		this.gestureBinding.destroy();
 		destroyDom(this._dom);
+		this.squareEls.clear();
+		this.squarePool.drain();
 		// Belt and braces: settleAnimation drains the current animation's clones,
 		// this catches anything left by an earlier code path.
 		this.fadingEls.forEach((el) => el.remove());
@@ -530,6 +538,7 @@ export class Board implements MoveContext, MarkContext {
 				selected: this._state.selected,
 				hover: this.hoverSquare,
 			},
+			this.squarePool,
 		);
 	}
 

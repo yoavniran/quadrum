@@ -1,8 +1,11 @@
 import type { Square } from "../types";
 import type { BoardState } from "../options";
+import type { NodePool } from "./nodePool";
 import { kingSquare } from "../model/position";
 import { isSquare } from "../model/squares";
 import { placePieceEl } from "./piecesView";
+
+export const SQUARE_POOL_CAPACITY = 64;
 
 export interface SquareDecorations {
 	targets: readonly Square[];
@@ -15,6 +18,7 @@ export function renderSquares(
 	els: Map<Square, HTMLElement>,
 	state: BoardState,
 	deco: SquareDecorations,
+	pool: NodePool<HTMLElement>,
 ): void {
 	// `checkSide` is either a square ("e1") or a colour ("white"), and both are
 	// strings — so the colour case must be recognised by elimination, not by
@@ -72,24 +76,56 @@ export function renderSquares(
 		classes.set(deco.hover, c);
 	}
 
-	// Update/create elements
-	for (const [sq, classList] of classes) {
-		let el = els.get(sq);
-		if (!el) {
-			el = document.createElement("qd-square");
-			el.dataset.square = sq;
-			board.appendChild(el);
-			els.set(sq, el);
+	// Release elements for squares no longer decorated.
+	// Collect stale squares first to avoid mutating the map during iteration.
+	const staleSquares: Square[] = [];
+	for (const sq of els.keys()) {
+		if (!classes.has(sq)) {
+			staleSquares.push(sq);
 		}
-		el.className = classList.join(" ");
-		placePieceEl(el, sq, state.orientation);
 	}
 
-	// Remove elements not in classes map
-	for (const [sq, el] of els) {
-		if (!classes.has(sq)) {
+	// Idle pooled element must NOT carry a data-square attribute; the e2e suite
+	// asserts an undecorated square has zero matching elements.
+	for (const sq of staleSquares) {
+		const el = els.get(sq)!;
+		els.delete(sq);
+		el.removeAttribute("data-square");
+		el.className = "";
+		el.hidden = true;
+		const kept = pool.release(el);
+		if (!kept) {
 			board.removeChild(el);
-			els.delete(sq);
 		}
+	}
+
+	// Acquire or create elements for newly decorated squares.
+	// Release runs before acquire so a square that just lost its decoration is
+	// immediately reusable by one that just gained it — the steady state of a
+	// move then allocates nothing.
+	for (const [sq, classList] of classes) {
+		let el: HTMLElement | undefined = els.get(sq);
+		if (!el) {
+			// A pooled element is still a child of the board — re-appending it
+			// would re-insert it, which is the structural mutation this pool
+			// exists to avoid.
+			el = pool.acquire() ?? undefined;
+			if (!el) {
+				el = document.createElement("qd-square");
+				board.appendChild(el);
+			}
+			els.set(sq, el);
+		}
+		if (el.hidden) {
+			el.hidden = false;
+		}
+		if (el.dataset.square !== sq) {
+			el.dataset.square = sq;
+		}
+		const className = classList.join(" ");
+		if (el.className !== className) {
+			el.className = className;
+		}
+		placePieceEl(el, sq, state.orientation);
 	}
 }

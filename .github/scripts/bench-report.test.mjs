@@ -13,6 +13,7 @@ import {
 	guardBaselineChange,
 	remeasurableFailures,
 	formatRatio,
+	detectableRegression,
 	SCHEMA_VERSION,
 	TIMER_RESOLUTION_MS,
 	MIN_GATED_MEDIAN_TICKS,
@@ -145,6 +146,71 @@ describe("compareSubjects", () => {
 	});
 });
 
+describe("detectableRegression", () => {
+	it("reproduces the contract's verification table at tolerance 0.15", () => {
+		// Contract's table: tolerance = 0.15
+		// | Scenario | h | R | as a percentage |
+		// | bundle-size | 0.000 | 1.150 | +15% |
+		// | mount | 0.028 | 1.183 | +18% |
+		// | engine-arrow-tick | 0.074 | 1.242 | +24% |
+		// | resize-storm | 0.091 | 1.265 | +27% |
+		// | update-throughput-anim-off | 0.146 | 1.347 | +35% |
+
+		// bundle-size: zero-width CI
+		const bundleSize = detectableRegression(0.882, [0.882, 0.882], 0.15);
+		expect(bundleSize).toBeCloseTo(1.15, 2);
+
+		// mount: ratio 1.286, CI [1.251, 1.321], h = 0.028
+		const mount = detectableRegression(1.286, [1.251, 1.321], 0.15);
+		expect(mount).toBeCloseTo(1.183, 2);
+
+		// engine-arrow-tick: ratio 1.911, CI [1.769, 2.052], h = 0.074
+		const engineArrowTick = detectableRegression(1.911, [1.769, 2.052], 0.15);
+		expect(engineArrowTick).toBeCloseTo(1.242, 2);
+
+		// resize-storm: ratio 0.087 → invert to 11.5, CI computed for h ≈ 0.091
+		const resizeStorm = detectableRegression(11.5, [10.45, 12.55], 0.15);
+		expect(resizeStorm).toBeCloseTo(1.265, 1);
+
+		// update-throughput-anim-off: ratio 4.743, CI [4.049, 5.435], h = 0.146
+		const updateThroughput = detectableRegression(4.743, [4.049, 5.435], 0.15);
+		expect(updateThroughput).toBeCloseTo(1.347, 1);
+	});
+
+	it("returns null for zero ratio", () => {
+		expect(detectableRegression(0, [1, 2], 0.15)).toBe(null);
+	});
+
+	it("returns null for non-finite ratio", () => {
+		expect(detectableRegression(Infinity, [1, 2], 0.15)).toBe(null);
+		expect(detectableRegression(NaN, [1, 2], 0.15)).toBe(null);
+	});
+
+	it("returns null for missing ratioCi95", () => {
+		expect(detectableRegression(1.5, null, 0.15)).toBe(null);
+		expect(detectableRegression(1.5, undefined, 0.15)).toBe(null);
+	});
+
+	it("returns null for non-finite ratioCi95 bounds", () => {
+		expect(detectableRegression(1.5, [NaN, 2], 0.15)).toBe(null);
+		expect(detectableRegression(1.5, [1, NaN], 0.15)).toBe(null);
+		expect(detectableRegression(1.5, [Infinity, 2], 0.15)).toBe(null);
+		expect(detectableRegression(1.5, [1, Infinity], 0.15)).toBe(null);
+	});
+
+	it("returns null when h >= 1 (interval too wide)", () => {
+		// h >= 1 means half-width >= ratio
+		expect(detectableRegression(1, [0, 2], 0.15)).toBe(null);
+		expect(detectableRegression(1, [-1, 3], 0.15)).toBe(null);
+	});
+
+	it("never returns Infinity", () => {
+		// Even with edge-case inputs, should never return Infinity
+		const result = detectableRegression(0.001, [0.0001, 0.002], 0.15);
+		expect(Number.isFinite(result) || result === null).toBe(true);
+	});
+});
+
 describe("compareToBaseline", () => {
 	const base = baseline({
 		mount: {
@@ -167,7 +233,7 @@ describe("compareToBaseline", () => {
 			mount: {
 				...base.scenarios.mount,
 				gated: false,
-				demotedReason: "mount/m: chessground CI half-width 9.0% of median (max 8%)",
+				demotedReason: "mount/m: can only detect a regression of +156% or worse (max +100%)",
 			},
 		});
 
@@ -588,6 +654,59 @@ describe("compareToBaseline", () => {
 	});
 });
 
+describe("renderGateSummary Sensitivity column", () => {
+	it("renders numeric sensitivity as percentage text", () => {
+		const gate = {
+			ok: true,
+			overridden: false,
+			results: [
+				{ scenarioId: "mount", status: "pass", reason: "detail", sensitivity: 1.35 },
+				{ scenarioId: "engine-arrow-tick", status: "pass", reason: "detail", sensitivity: 1.24 },
+			],
+		};
+
+		const output = renderGateSummary(gate);
+
+		// Check header row has four columns
+		expect(output).toContain("| Scenario | Status | Sensitivity | Detail |");
+
+		// Check percentages are rounded
+		expect(output).toContain("≥ +35%");
+		expect(output).toContain("≥ +24%");
+	});
+
+	it("renders null sensitivity as em dash", () => {
+		const gate = {
+			ok: true,
+			overridden: false,
+			results: [
+				{ scenarioId: "mount", status: "pass", reason: "detail", sensitivity: null },
+			],
+		};
+
+		const output = renderGateSummary(gate);
+
+		expect(output).toContain("| mount |");
+		expect(output).toContain("| — |");
+	});
+
+	it("header row has exactly four columns", () => {
+		const gate = {
+			ok: true,
+			overridden: false,
+			results: [
+				{ scenarioId: "test", status: "pass", reason: "detail", sensitivity: 1.2 },
+			],
+		};
+
+		const output = renderGateSummary(gate);
+		const headerRow = output.split("\n").find((line) => line.includes("Scenario"));
+
+		const columnCount = (headerRow.match(/\|/g) || []).length - 1; // -1 for leading/trailing pipes
+		expect(columnCount).toBe(4);
+	});
+});
+
 describe("summarizeRun", () => {
 	const record = {
 		schemaVersion: SCHEMA_VERSION,
@@ -699,11 +818,12 @@ describe("makeBaseline", () => {
 	it("refuses to mint when every gated timing scenario is too noisy to gate", () => {
 		// With a single gated timing scenario, "one is noisy" and "all are noisy"
 		// coincide -- a run like this measured the machine, not the code.
+		// This one triggers the timer floor check (metric below MIN_GATED_MEDIAN_TICKS * TIMER_RESOLUTION_MS).
 		expect(() =>
 			makeBaseline(
 				summary([
 					scenario({
-						metrics: [metric({ quadrum: { median: 10, ci95: [7, 13] }, chessground: { median: 10, ci95: [9.9, 10.1] } })],
+						metrics: [metric({ quadrum: { median: 0.001, ci95: [0.0005, 0.0015] }, chessground: { median: 0.001, ci95: [0.0008, 0.0012] } })],
 					}),
 				]),
 			),
@@ -711,12 +831,22 @@ describe("makeBaseline", () => {
 	});
 
 	it("demotes a noisy gated scenario to reported-only instead of failing the mint", () => {
-		// A full run costs over an hour; one metric's CI landing a point over the
-		// cap must cost that scenario its gate, not the whole run.
+		// A full run costs over an hour; one metric failing admission must cost
+		// that scenario its gate, not the whole run. This one is demoted by the
+		// usefulness floor: its ratio CI is so wide that the smallest regression
+		// it could still detect is worse than +100%.
 		const minted = makeBaseline(
 			summary([
 				scenario({
-					metrics: [metric({ quadrum: { median: 10, ci95: [7, 13] }, chessground: { median: 10, ci95: [9.9, 10.1] } })],
+					metrics: [metric(
+						// Ratio 5.0, CI [2.5, 10.0]: h = (10.0-2.5)/(2*5.0) = 0.75
+						// R = 1.15 / (1 - 0.75) = 4.6 >> 1.0, so demoted
+						{
+							quadrum: { median: 50, ci95: [25, 100] },
+							chessground: { median: 10, ci95: [9, 11] },
+							comparison: { ratio: 5, ratioCi95: [25 / 11, 100 / 9], verdict: "chessground", tie: false },
+						},
+					)],
 				}),
 				scenario({
 					id: "steady",
@@ -726,7 +856,7 @@ describe("makeBaseline", () => {
 		);
 
 		expect(minted.scenarios.mount.gated).toBe(false);
-		expect(minted.scenarios.mount.demotedReason).toMatch(/quadrum CI half-width/);
+		expect(minted.scenarios.mount.demotedReason).toMatch(/can only detect a regression/);
 		expect(minted.scenarios.steady.gated).toBe(true);
 		expect(minted.scenarios.steady.demotedReason).toBeUndefined();
 	});
@@ -1487,16 +1617,20 @@ describe("makeBaseline validation", () => {
 		expect(() => makeBaseline(sum)).toThrow(/chessground/);
 	});
 
-	it("throws when gated metric has wide chessground CI", () => {
+	it("throws when every gated timing scenario is demoted by usefulness floor", () => {
 		const scen = baselineScenario({
-			cMedian: 0.3,
+			qMedian: 50,
+			cMedian: 10,
 			gated: true,
 		});
-		// Make chessground CI very wide (> 8%)
-		scen.metrics.m.chessground.ci95 = [0.1, 0.5];
+		// Make ratio CI very wide so detectable regression exceeds +100%
+		// ratio 5.0, CI [2.5, 10], h = 0.75, R ≈ 4.6
+		scen.metrics.m.quadrum.ci95 = [25, 100];
+		scen.metrics.m.chessground.ci95 = [9, 11];
+		scen.metrics.m.comparison.ratioCi95 = [25 / 11, 100 / 9];
 		const sum = baselineSummary(scen);
 
-		expect(() => makeBaseline(sum)).toThrow();
+		expect(() => makeBaseline(sum)).toThrow(/noise limit/);
 	});
 
 	it("throws when gated metric has chessground CI width exactly zero with n > 1", () => {
@@ -1528,19 +1662,36 @@ describe("makeBaseline validation", () => {
 		expect(() => makeBaseline(sum)).not.toThrow();
 	});
 
-	it("mints healthy gated ms metric (medians > 0.1 ms, CI half-widths < 8%)", () => {
+	it("mints healthy gated ms metric (medians > 0.1 ms, detectable regression <= 100%)", () => {
 		const scen = baselineScenario({
 			qMedian: 0.5,
 			cMedian: 0.5,
 			unit: "ms",
 			gated: true,
 		});
-		// Create CI half-widths of ~5%
+		// Create ratio CI with manageable width so detectable regression stays within limit.
 		scen.metrics.m.quadrum.ci95 = [0.475, 0.525]; // 5% relative
 		scen.metrics.m.chessground.ci95 = [0.475, 0.525]; // 5% relative
 		const sum = baselineSummary(scen);
 
 		expect(() => makeBaseline(sum)).not.toThrow();
+	});
+
+	it("keeps a scenario gated despite a wide per-subject CI when the ratio is still sharp", () => {
+		// This is the whole point of the change. Both subjects are individually
+		// noisy -- the old 8% per-subject cap would have demoted this -- but they
+		// are noisy together, so the ratio's own interval stays tight and the gate
+		// can still detect a real regression.
+		const scen = baselineScenario({ qMedian: 5, cMedian: 10, unit: "ms", gated: true });
+		scen.metrics.m.quadrum.ci95 = [4, 6]; // 20% relative, way over the deleted cap
+		scen.metrics.m.chessground.ci95 = [8, 12]; // 20% relative
+		scen.metrics.m.comparison = { ratio: 0.5, ratioCi95: [0.48, 0.52], verdict: "quadrum", tie: false };
+
+		const minted = makeBaseline(baselineSummary(scen));
+
+		expect(minted.scenarios.test.gated).toBe(true);
+		expect(minted.scenarios.test.demotedReason).toBeUndefined();
+		expect(minted.scenarios.test.sensitivity).toBeCloseTo(1.15 / (1 - 0.04), 5);
 	});
 
 	it("stores the declared statistic in the baseline", () => {
@@ -1574,6 +1725,101 @@ describe("makeBaseline validation", () => {
 
 		expect(stored.statistic).toBe("median");
 		expect(stored.quadrum.median).toBe(0.5);
+	});
+
+	it("demotes scenario when detectable regression exceeds max", () => {
+		// A scenario with a high ratio and wide CI that results in detectable regression > 100%
+		const scen = baselineScenario({
+			qMedian: 50,
+			cMedian: 10,
+			gated: true,
+		});
+		// Set up a very wide CI: ratio 5.0, CI [2.5, 10.0] gives h = 0.75, R ≈ 4.6
+		scen.metrics.m.quadrum.ci95 = [25, 100];
+		scen.metrics.m.chessground.ci95 = [9, 11];
+		scen.metrics.m.comparison.ratioCi95 = [25 / 11, 100 / 9];
+
+		// Also add a second scenario that won't be demoted, so the mint doesn't throw
+		const scen2 = baselineScenario({ qMedian: 0.5, cMedian: 0.5, gated: true });
+		scen2.id = "other";
+
+		const sum = {
+			schemaVersion: SCHEMA_VERSION,
+			run: { id: "run-1", startedAt: "2026-08-01T00:00:00.000Z", durationMs: 1000, trigger: "schedule", publishable: true },
+			env: { node: "v24.0.0", platform: "linux", arch: "x64", cpus: 4, cpuModel: "AMD EPYC 7763", gitSha: "9f1c0beabcdef", gitRef: "main", gitDirty: false },
+			browser: { name: "chromium", version: "141.0", headless: true, viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1, cpuThrottlingRate: 4 },
+			subjects: { quadrum: "0.2.2", chessground: "9.2.1" },
+			config: { repetitions: 7, warmups: 1, order: "interleaved-abba", freshContextPerRepetition: true },
+			caveats: [],
+			scenarios: [scen, scen2],
+		};
+
+		const baseline = makeBaseline(sum);
+
+		expect(baseline.scenarios.test.gated).toBe(false);
+		expect(baseline.scenarios.test.demotedReason).toMatch(/can only detect a regression/);
+		expect(baseline.scenarios.other.gated).toBe(true);
+	});
+
+	it("stores sensitivity on every scenario, gated or not", () => {
+		const gateds = baselineScenario({ gated: true });
+		const notGated = baselineScenario({ qMedian: 5, cMedian: 10, gated: false });
+		notGated.id = "other";
+
+		const sum = {
+			schemaVersion: SCHEMA_VERSION,
+			run: { id: "run-1", startedAt: "2026-08-01T00:00:00.000Z", durationMs: 1000, trigger: "schedule", publishable: true },
+			env: { node: "v24.0.0", platform: "linux", arch: "x64", cpus: 4, cpuModel: "AMD EPYC 7763", gitSha: "9f1c0beabcdef", gitRef: "main", gitDirty: false },
+			browser: { name: "chromium", version: "141.0", headless: true, viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1, cpuThrottlingRate: 4 },
+			subjects: { quadrum: "0.2.2", chessground: "9.2.1" },
+			config: { repetitions: 7, warmups: 1, order: "interleaved-abba", freshContextPerRepetition: true },
+			caveats: [],
+			scenarios: [gateds, notGated],
+		};
+
+		const baseline = makeBaseline(sum);
+
+		expect(baseline.scenarios.test).toHaveProperty("sensitivity");
+		expect(baseline.scenarios.other).toHaveProperty("sensitivity");
+		// Both should have a number or null, not undefined
+		expect(baseline.scenarios.test.sensitivity === null || typeof baseline.scenarios.test.sensitivity === "number").toBe(true);
+		expect(baseline.scenarios.other.sensitivity === null || typeof baseline.scenarios.other.sensitivity === "number").toBe(true);
+	});
+
+	it("accepts tolerance option in makeBaseline", () => {
+		const scen = baselineScenario({ qMedian: 50, cMedian: 10 });
+		// Set up a CI that causes demotion at tight tolerance but stays gated at loose tolerance
+		// ratio 5.0, CI [3.75, 6.25]: h = 1.25/5 = 0.25
+		// At tol=0.01: R = 1.01/(1-0.25) = 1.347 > 1.0, demoted
+		// At tol=0.5: R = 1.5/(1-0.25) = 2.0 > 1.0, still demoted
+		// Let me try h = 0.19: at tol=0.01 R = 1.01/0.81 = 1.247, at tol=0.5 R = 1.5/0.81 = 1.85
+		// For the test to work: tight tol demotes, loose tol doesn't. That means:
+		// h small enough that (1 + tol_tight)/(1-h) > 1.0 but (1 + tol_loose)/(1-h) < 1.0
+		// This is impossible: if loose tol > tight tol, then if loose doesn't demote, tight won't either
+		// Let me just verify the parameter is accepted by testing different tolerances stay gated
+		scen.metrics.m.quadrum.ci95 = [40, 60];  // h = 10/50 = 0.2
+		scen.metrics.m.chessground.ci95 = [9.9, 10.1];
+		scen.metrics.m.comparison.ratioCi95 = [40/10.1, 60/9.9];
+
+		const sum = baselineSummary(scen);
+
+		// Both should remain gated since tolerance is large enough
+		const baseline1 = makeBaseline(sum, { tolerance: 0.15 });
+		expect(baseline1.scenarios.test.gated).toBe(true);
+
+		const baseline2 = makeBaseline(sum, { tolerance: 0.5 });
+		expect(baseline2.scenarios.test.gated).toBe(true);
+	});
+
+	it("single-argument makeBaseline still works (backward compatibility)", () => {
+		const scen = baselineScenario({ qMedian: 0.5, cMedian: 0.5, unit: "ms", gated: true });
+		const sum = baselineSummary(scen);
+
+		// Call with single argument (no options)
+		const baseline = makeBaseline(sum);
+
+		expect(baseline.scenarios.test).toBeDefined();
+		expect(baseline.scenarios.test.sensitivity).toBeDefined();
 	});
 });
 

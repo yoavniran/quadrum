@@ -4,6 +4,7 @@ import type { NodePool } from "./nodePool";
 import { kingSquare } from "../model/position";
 import { isSquare } from "../model/squares";
 import { placePieceEl } from "./piecesView";
+import { clearSquareAttr, setSquareAttr } from "./placement";
 
 export const SQUARE_POOL_CAPACITY = 64;
 
@@ -90,7 +91,7 @@ export function renderSquares(
 	for (const sq of staleSquares) {
 		const el = els.get(sq)!;
 		els.delete(sq);
-		el.removeAttribute("data-square");
+		clearSquareAttr(el);
 		el.className = "";
 		el.hidden = true;
 		const kept = pool.release(el);
@@ -119,9 +120,7 @@ export function renderSquares(
 		if (el.hidden) {
 			el.hidden = false;
 		}
-		if (el.dataset.square !== sq) {
-			el.dataset.square = sq;
-		}
+		setSquareAttr(el, sq);
 		const className = classList.join(" ");
 		if (el.className !== className) {
 			el.className = className;

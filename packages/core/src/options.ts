@@ -160,7 +160,10 @@ export function applyOptions(state: BoardState, options: BoardOptions): BoardSta
 	const next: BoardState = {
 		...state,
 		// Cloned, not aliased: callers treat the returned state as wholly theirs.
-		pieces: new Map(state.pieces),
+		// A supplied position replaces the map wholesale, so cloning first would
+		// build all 32 entries only to drop them -- and a position is supplied on
+		// every ordinary update, which is where that waste is actually paid.
+		pieces: options.position !== undefined ? fenToPieces(options.position) : new Map(state.pieces),
 		moves: { ...state.moves },
 		select: { ...state.select },
 		drag: { ...state.drag },
@@ -190,11 +193,6 @@ export function applyOptions(state: BoardState, options: BoardOptions): BoardSta
 	}
 	if (options.locked !== undefined) {
 		next.locked = options.locked;
-	}
-
-	// Handle position
-	if (options.position !== undefined) {
-		next.pieces = fenToPieces(options.position);
 	}
 
 	// Handle moves group

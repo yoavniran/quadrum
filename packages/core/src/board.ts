@@ -7,6 +7,11 @@ import {
 import { piecesToFen, samePieces } from "./model/position";
 import { squareToPoint, clientToPoint } from "./model/squares";
 import { planDiff } from "./model/diffPlan";
+// The animation writes transforms straight onto piece elements, so it must go
+// through the same recorder the render path compares against. A write that
+// bypassed it would leave the record claiming a position the element no longer
+// holds, and the next render would skip the correcting write.
+import { setTransform } from "./view/placement";
 import type { BoardDom } from "./view/layout";
 import {
 	buildDom,
@@ -325,9 +330,9 @@ export class Board implements MoveContext, MarkContext {
 
 				if (el) {
 					el.classList.add("gliding");
-					el.style.transform = `translate(${(toPoint.x + offsetX) * 100}%, ${
+					setTransform(el, `translate(${(toPoint.x + offsetX) * 100}%, ${
 						(toPoint.y + offsetY) * 100
-					}%)`;
+					}%)`);
 				}
 
 				return { el, toPoint, offsetX, offsetY };
@@ -362,7 +367,7 @@ export class Board implements MoveContext, MarkContext {
 				moveData.forEach(({ el, toPoint }) => {
 					if (el) {
 						el.classList.remove("gliding");
-						el.style.transform = `translate(${toPoint.x * 100}%, ${toPoint.y * 100}%)`;
+						setTransform(el, `translate(${toPoint.x * 100}%, ${toPoint.y * 100}%)`);
 					}
 				});
 
@@ -393,9 +398,9 @@ export class Board implements MoveContext, MarkContext {
 					// Update moves
 					moveData.forEach(({ el, toPoint, offsetX, offsetY }) => {
 						if (el) {
-							el.style.transform = `translate(${
+							setTransform(el, `translate(${
 								(toPoint.x + offsetX * (1 - progress)) * 100
-							}%, ${(toPoint.y + offsetY * (1 - progress)) * 100}%)`;
+							}%, ${(toPoint.y + offsetY * (1 - progress)) * 100}%)`);
 						}
 					});
 

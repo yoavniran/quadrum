@@ -126,9 +126,9 @@ describe("Board", () => {
 		// After position change, marks should be cleared (setUserMarks was called)
 		// We can't directly assert the board's internal state, but the position change
 		// should trigger the clearMarksOnPositionChange effect
-		const svgMarks = container.querySelectorAll(".qd-marks > *");
-		// The marks SVG should only have the <defs> element, not the arrows/circles
-		expect(svgMarks.length).toBeLessThanOrEqual(1);
+		// Shed mark nodes stay parked in the layer for reuse, so the check is that no
+		// mark is drawn any more -- not that the layer is empty.
+		expect(container.querySelectorAll(".qd-marks [data-mark]").length).toBe(0);
 	});
 
 	it("with clearMarksOnPositionChange, user marks are preserved across re-render with same position", async () => {

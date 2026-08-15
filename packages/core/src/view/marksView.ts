@@ -1,7 +1,11 @@
 import type { Mark, Pen, Color } from "../types";
 import type { BoardState } from "../options";
 import type { BoardDom } from "./layout";
+import type { MarkNodeKind, MarkPools } from "./markPool";
+import type { GradientRegistry } from "./markGradients";
 import { squareToPoint } from "../model/squares";
+import { createMarkPools } from "./markPool";
+import { createGradientRegistry } from "./markGradients";
 
 /** SVG coordinates carry no meaning past a fraction of a unit; trimming them
  *  keeps the emitted markup readable and diffable. */
@@ -57,16 +61,13 @@ interface RenderedMark {
  *  cache dies with the board and the module stays stateless from the caller's view. */
 interface MarksCache {
 	drewSomething: boolean;
-	gradients: Map<string, SVGLinearGradientElement>;
-	boardSeq: number;
-	// Monotonic per-board counter for minting gradient ids. Never decreases, so an
-	// id can never be reused while an earlier gradient sharing it is still alive --
-	// unlike `gradients.size`, which drops when the post-render sweep deletes
-	// entries and can then reissue an id that a surviving gradient still holds.
-	nextGradientIndex: number;
-	// Tracks which gradient cache keys are referenced in the current render, so
-	// unreferenced ones can be cleaned up afterwards.
-	referencedGradientKeys?: Set<string>;
+	// Owns every fade gradient: minting, content-keyed reuse, and the post-render
+	// sweep that parks the ones this render stopped referencing.
+	gradients: GradientRegistry;
+	// Nodes shed by the diff are parked here instead of destroyed, so a render
+	// that replaces one mark wholesale -- the engine-tick case -- mutates
+	// attributes rather than creating elements.
+	pools: MarkPools;
 	// Maps mark keys to their rendered nodes and inputs, for keyed diffing.
 	renderedMarks: Map<string, RenderedMark>;
 }
@@ -78,14 +79,44 @@ function getCache(dom: BoardDom): MarksCache {
 	if (!cache) {
 		cache = {
 			drewSomething: false,
-			gradients: new Map(),
-			boardSeq: boardSeq++,
-			nextGradientIndex: 0,
+			gradients: createGradientRegistry(boardSeq++),
+			pools: createMarkPools(),
 			renderedMarks: new Map(),
 		};
 		caches.set(dom, cache);
 	}
 	return cache;
+}
+
+/** Parks every node a retired mark owned, so the next mark that needs one of the
+ *  same shape mutates it instead of creating one. A full pool hands the node back
+ *  for disposal, which is the only path that still touches the tree. */
+function retire(cache: MarksCache, rendered: RenderedMark): void {
+	const parts: [MarkNodeKind, SVGElement | undefined][] = [
+		["shaft", rendered.shaft],
+		["head", rendered.head],
+		["circle", rendered.circle],
+		["badge", rendered.badge],
+	];
+	for (const [kind, node] of parts) {
+		if (node && !cache.pools.release(kind, node)) {
+			node.remove();
+		}
+	}
+}
+
+/** An idle node of the given shape, or a fresh one. A recycled node arrives with
+ *  its stamps stripped and every other attribute stale, so callers must write the
+ *  full attribute set -- which is why the paint helpers below are shared by the
+ *  create and the mutate path rather than being duplicated. */
+function take(cache: MarksCache, kind: MarkNodeKind, tag: string, layer: SVGSVGElement): SVGElement {
+	const pooled = cache.pools.acquire(kind);
+	if (pooled) {
+		return pooled;
+	}
+	const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+	layer.appendChild(node);
+	return node;
 }
 
 /** Check if the given RenderedMark's inputs are identical to the new ones. */
@@ -185,7 +216,8 @@ function describeMark(
  * board units.
  *
  * Gradients are cached by content (pen and coordinates), so identical geometry
- * across renders reuses the same element and the same fill URL.
+ * across renders reuses the same element and the same fill URL -- and a miss
+ * recycles a parked element rather than creating one.
  */
 function fadeToOpaque(
 	dom: BoardDom,
@@ -198,53 +230,7 @@ function fadeToOpaque(
 		return null;
 	}
 
-	const cache = getCache(dom);
-	const x1Rounded = round(segment.x1);
-	const y1Rounded = round(segment.y1);
-	const x2Rounded = round(segment.x2);
-	const y2Rounded = round(segment.y2);
-
-	// Cache key: pen colour, opacity, and the four rounded coordinates.
-	const cacheKey = `${pen.color}|${pen.opacity}|${x1Rounded},${y1Rounded},${x2Rounded},${y2Rounded}`;
-
-	// Track this key as referenced if tracking is active.
-	if (cache.referencedGradientKeys) {
-		cache.referencedGradientKeys.add(cacheKey);
-	}
-
-	// Check if this content is already cached.
-	const existing = cache.gradients.get(cacheKey);
-	if (existing && existing.parentNode === defs) {
-		return `url(#${existing.id})`;
-	}
-
-	// Create a new gradient element for this content. The index comes from a
-	// counter that only ever increments -- `gradients.size` looks equivalent but
-	// isn't, because the post-render sweep deletes entries and shrinks it, which
-	// can reissue an id that an earlier, still-live gradient holds.
-	const id = `qd-fade-${cache.boardSeq}-${cache.nextGradientIndex++}`;
-	const gradient = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
-	gradient.setAttribute("id", id);
-	gradient.setAttribute("gradientUnits", "userSpaceOnUse");
-	gradient.setAttribute("x1", String(x1Rounded));
-	gradient.setAttribute("y1", String(y1Rounded));
-	gradient.setAttribute("x2", String(x2Rounded));
-	gradient.setAttribute("y2", String(y2Rounded));
-
-	for (const [offset, opacity] of [
-		["0", pen.opacity],
-		["1", 1],
-	] as const) {
-		const stop = document.createElementNS("http://www.w3.org/2000/svg", "stop");
-		stop.setAttribute("offset", offset);
-		stop.setAttribute("stop-color", pen.color);
-		stop.setAttribute("stop-opacity", String(opacity));
-		gradient.appendChild(stop);
-	}
-
-	defs.appendChild(gradient);
-	cache.gradients.set(cacheKey, gradient);
-	return `url(#${id})`;
+	return getCache(dom).gradients.fill(defs, pen.color, pen.opacity, segment);
 }
 
 /** The shaft points, head points and (optional) fade for an arrow, computed once
@@ -324,6 +310,64 @@ function computeArrowGeometry(dom: BoardDom, mark: Mark, pen: Pen, orientation: 
 	};
 }
 
+/** Writes an arrow's full attribute set onto its two polygons. Shared by the
+ *  create and the mutate path: a recycled node is indistinguishable from a fresh
+ *  one here, and the two used to carry separate copies of this that had already
+ *  drifted apart. Every write is guarded, so a surviving arrow whose inputs
+ *  didn't move still costs nothing. */
+function paintArrow(
+	shaft: SVGElement,
+	head: SVGElement,
+	geo: ArrowGeometry,
+	mark: Mark,
+	pen: Pen,
+	penKey: string,
+): void {
+	setAttributeIfChanged(shaft, "points", geo.shaftPoints);
+	setAttributeIfChanged(shaft, "fill", geo.fade ?? pen.color);
+	if (geo.fade) {
+		// The gradient carries the pen's alpha in its stops, so an element opacity
+		// would scale it a second time. A recycled node may still hold one.
+		removeAttributeIfPresent(shaft, "opacity");
+	} else {
+		setAttributeIfChanged(shaft, "opacity", String(pen.opacity));
+	}
+	setAttributeIfChanged(shaft, "stroke-linejoin", "round");
+	describeMark(shaft, "arrow", mark, penKey, "shaft");
+
+	setAttributeIfChanged(head, "points", geo.headPoints);
+	setAttributeIfChanged(head, "fill", pen.color);
+	setAttributeIfChanged(head, "opacity", "1");
+	setAttributeIfChanged(head, "stroke-linejoin", "round");
+	describeMark(head, null, mark, penKey, "head");
+}
+
+/** As `paintArrow`, for a circle mark. */
+function paintCircle(circle: SVGElement, mark: Mark, pen: Pen, orientation: Color, penKey: string): void {
+	const fromPoint = squareToPoint(mark.from, orientation);
+	const width = mark.width ?? pen.width;
+
+	setAttributeIfChanged(circle, "cx", String(fromPoint.x * 100 + 50));
+	setAttributeIfChanged(circle, "cy", String(fromPoint.y * 100 + 50));
+	setAttributeIfChanged(circle, "r", String(50 - width / 2));
+	setAttributeIfChanged(circle, "fill", "none");
+	setAttributeIfChanged(circle, "stroke", pen.color);
+	setAttributeIfChanged(circle, "stroke-width", String(width));
+	setAttributeIfChanged(circle, "opacity", String(pen.opacity));
+	describeMark(circle, "circle", mark, penKey);
+}
+
+/** As `paintArrow`, for a badge mark. The `svg` payload is only rewritten when it
+ *  actually changed -- it is the one thing here that costs a parse. */
+function paintBadge(badge: SVGElement, mark: Mark, orientation: Color, penKey: string, svgChanged: boolean): void {
+	const fromPoint = squareToPoint(mark.from, orientation);
+	setAttributeIfChanged(badge, "transform", `translate(${fromPoint.x * 100}, ${fromPoint.y * 100})`);
+	if (svgChanged) {
+		badge.innerHTML = mark.svg ?? "";
+	}
+	describeMark(badge, "badge", mark, penKey);
+}
+
 /** Places `node` so its next sibling is `before` (i.e. immediately in front of
  *  `before`, or last if `before` is null), but only if it isn't already there.
  *  `insertBefore` is a DOM write even when the position doesn't change, and the
@@ -368,14 +412,14 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 		if (!cache.drewSomething) {
 			return;
 		}
-		// Mark all existing marks for removal since marks are disabled.
+		// Marks are disabled, so every rendered mark retires. The nodes are parked
+		// rather than destroyed: toggling marks back on is a normal thing for a
+		// consumer to do, and it should not have to rebuild the layer.
 		for (const rendered of cache.renderedMarks.values()) {
-			rendered.shaft?.remove();
-			rendered.head?.remove();
-			rendered.circle?.remove();
-			rendered.badge?.remove();
+			retire(cache, rendered);
 		}
 		cache.renderedMarks.clear();
+		cache.gradients.sweep();
 		cache.drewSomething = false;
 		return;
 	}
@@ -420,10 +464,6 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 	];
 	const desiredKeys = new Set<string>();
 
-	// Track which gradient cache keys are referenced by this render, so unreferenced
-	// ones can be cleaned up afterwards.
-	cache.referencedGradientKeys = new Set<string>();
-
 	// Build a new list of rendered marks by diffing against the existing ones.
 	const newRenderedMarks = new Map<string, RenderedMark>();
 
@@ -458,125 +498,44 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 			circle = rendered.circle;
 			badge = rendered.badge;
 
-			// Still need to track gradient references if it's an arrow with fade.
+			// This path never calls `fadeToOpaque`, so the gradient the surviving
+			// shaft still points at has not been marked as referenced -- and the
+			// post-render sweep would park it out from under a live arrow.
 			if (kind === "arrow" && pen.opacity < 1 && rendered.shaft) {
-				const fill = rendered.shaft.getAttribute("fill");
-				if (fill && fill.startsWith("url(#")) {
-					// Extract the gradient key from the URL and mark as referenced.
-					const gradientId = fill.slice(5, -1);
-					for (const [cacheKey, gradient] of cache.gradients) {
-						if (gradient.id === gradientId) {
-							cache.referencedGradientKeys!.add(cacheKey);
-							break;
-						}
-					}
-				}
+				cache.gradients.retainFill(rendered.shaft.getAttribute("fill"));
 			}
-		} else if (kind === "badge") {
-			// For badges, compare by svg string and update innerHTML if changed.
-			if (rendered?.badge && rendered.svg === mark.svg) {
-				badge = rendered.badge;
-			} else {
-				// Remove old badge if kind changed.
-				if (rendered?.badge) {
-					rendered.badge.remove();
-				}
-				const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-				const fromPoint = squareToPoint(mark.from, state.orientation);
-				g.setAttribute("transform", `translate(${fromPoint.x * 100}, ${fromPoint.y * 100})`);
-				g.innerHTML = mark.svg!;
-				describeMark(g, "badge", mark, penKey);
-				dom.badges.appendChild(g);
-				badge = g;
-			}
-		} else if (kind === "arrow" && rendered?.kind === "arrow" && rendered.shaft && rendered.head) {
-			// Arrow with reuse: mutate the existing polygons in place, writing only
-			// the attributes that actually changed so a partial change (e.g. only
-			// the pen) doesn't spray writes across geometry that didn't move.
-			const geo = computeArrowGeometry(dom, mark, pen, state.orientation);
-
-			setAttributeIfChanged(rendered.shaft, "points", geo.shaftPoints);
-			setAttributeIfChanged(rendered.shaft, "fill", geo.fade ?? pen.color);
-			if (geo.fade) {
-				removeAttributeIfPresent(rendered.shaft, "opacity");
-			} else {
-				setAttributeIfChanged(rendered.shaft, "opacity", String(pen.opacity));
-			}
-			setAttributeIfChanged(rendered.shaft, "stroke-linejoin", "round");
-			describeMark(rendered.shaft, "arrow", mark, penKey, "shaft");
-
-			// The create branch also paints the head -- fill, full opacity and the
-			// same line join -- so a pen change on a surviving arrow must repaint it
-			// too, or the head keeps the previous pen's colour.
-			setAttributeIfChanged(rendered.head, "points", geo.headPoints);
-			setAttributeIfChanged(rendered.head, "fill", pen.color);
-			setAttributeIfChanged(rendered.head, "opacity", "1");
-			setAttributeIfChanged(rendered.head, "stroke-linejoin", "round");
-			describeMark(rendered.head, null, mark, penKey, "head");
-
-			shaft = rendered.shaft;
-			head = rendered.head;
-		} else if (kind === "circle" && rendered?.kind === "circle" && rendered.circle) {
-			// Circle with reuse: same idea as the arrow mutate path above.
-			const fromPoint = squareToPoint(mark.from, state.orientation);
-			const fromCenter = { x: fromPoint.x * 100 + 50, y: fromPoint.y * 100 + 50 };
-			const r = 50 - (mark.width ?? pen.width) / 2;
-
-			setAttributeIfChanged(rendered.circle, "cx", String(fromCenter.x));
-			setAttributeIfChanged(rendered.circle, "cy", String(fromCenter.y));
-			setAttributeIfChanged(rendered.circle, "r", String(r));
-			setAttributeIfChanged(rendered.circle, "stroke", pen.color);
-			setAttributeIfChanged(rendered.circle, "stroke-width", String(mark.width ?? pen.width));
-			setAttributeIfChanged(rendered.circle, "opacity", String(pen.opacity));
-			describeMark(rendered.circle, "circle", mark, penKey);
-
-			circle = rendered.circle;
 		} else {
-			// Kind changed or first creation: create new nodes.
-			if (rendered) {
-				rendered.shaft?.remove();
-				rendered.head?.remove();
-				rendered.circle?.remove();
-				rendered.badge?.remove();
-			}
-
-			const fromPoint = squareToPoint(mark.from, state.orientation);
-			const fromCenter = { x: fromPoint.x * 100 + 50, y: fromPoint.y * 100 + 50 };
-
+			// Something changed. Retire whatever the previous render left that this
+			// one cannot reuse, then paint -- onto the surviving node where the kind
+			// still matches, onto a parked one otherwise, and onto a fresh element
+			// only when the pool is empty.
 			if (kind === "arrow") {
-				const geo = computeArrowGeometry(dom, mark, pen, state.orientation);
-
-				// Create shaft polygon.
-				shaft = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-				shaft.setAttribute("points", geo.shaftPoints);
-				shaft.setAttribute("fill", geo.fade ?? pen.color);
-				if (!geo.fade) {
-					shaft.setAttribute("opacity", String(pen.opacity));
+				const keep = rendered?.kind === "arrow" && rendered.shaft && rendered.head;
+				if (rendered && !keep) {
+					retire(cache, rendered);
 				}
-				shaft.setAttribute("stroke-linejoin", "round");
-				describeMark(shaft, "arrow", mark, penKey, "shaft");
-				dom.marks.appendChild(shaft);
-
-				// Create head polygon.
-				head = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-				head.setAttribute("points", geo.headPoints);
-				head.setAttribute("fill", pen.color);
-				head.setAttribute("opacity", "1");
-				head.setAttribute("stroke-linejoin", "round");
-				describeMark(head, null, mark, penKey, "head");
-				dom.heads.appendChild(head);
+				shaft = keep ? rendered!.shaft! : take(cache, "shaft", "polygon", dom.marks);
+				head = keep ? rendered!.head! : take(cache, "head", "polygon", dom.heads);
+				// Geometry is computed after the nodes are settled because it is what
+				// registers the fade gradient, and registering one for an arrow we
+				// then failed to draw would leave a gradient nothing references.
+				paintArrow(shaft, head, computeArrowGeometry(dom, mark, pen, state.orientation), mark, pen, penKey);
+			} else if (kind === "circle") {
+				const keep = rendered?.kind === "circle" && rendered.circle;
+				if (rendered && !keep) {
+					retire(cache, rendered);
+				}
+				circle = keep ? rendered!.circle! : take(cache, "circle", "circle", dom.marks);
+				paintCircle(circle, mark, pen, state.orientation, penKey);
 			} else {
-				// Circle
-				circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-				circle.setAttribute("cx", String(fromCenter.x));
-				circle.setAttribute("cy", String(fromCenter.y));
-				circle.setAttribute("r", String(50 - (mark.width ?? pen.width) / 2));
-				circle.setAttribute("fill", "none");
-				circle.setAttribute("stroke", pen.color);
-				circle.setAttribute("stroke-width", String(mark.width ?? pen.width));
-				circle.setAttribute("opacity", String(pen.opacity));
-				describeMark(circle, "circle", mark, penKey);
-				dom.marks.appendChild(circle);
+				const keep = rendered?.kind === "badge" && rendered.badge;
+				if (rendered && !keep) {
+					retire(cache, rendered);
+				}
+				badge = keep ? rendered!.badge! : take(cache, "badge", "g", dom.badges);
+				// A recycled or newly created node holds no markup, so the payload has
+				// to be written; a surviving one only when the payload itself moved.
+				paintBadge(badge, mark, state.orientation, penKey, !keep || rendered!.svg !== mark.svg);
 			}
 		}
 
@@ -601,13 +560,10 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 		});
 	}
 
-	// Remove marks whose keys are no longer in the desired set.
+	// Retire marks whose keys are no longer in the desired set.
 	for (const [key, rendered] of cache.renderedMarks) {
 		if (!desiredKeys.has(key)) {
-			rendered.shaft?.remove();
-			rendered.head?.remove();
-			rendered.circle?.remove();
-			rendered.badge?.remove();
+			retire(cache, rendered);
 		}
 	}
 
@@ -627,22 +583,9 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 	orderLayer(dom.headsOrNull, headsLayerOrder);
 	orderLayer(dom.badgesOrNull, badgesLayerOrder);
 
-	// Clean up unreferenced gradients.
-	const defsElement = dom.marksOrNull?.querySelector("defs");
-	if (defsElement && cache.referencedGradientKeys) {
-		const keysToRemove: string[] = [];
-		for (const [key, gradient] of cache.gradients) {
-			if (!cache.referencedGradientKeys.has(key) && gradient.parentNode === defsElement) {
-				gradient.remove();
-				keysToRemove.push(key);
-			}
-		}
-		for (const key of keysToRemove) {
-			cache.gradients.delete(key);
-		}
-	}
+	// Park the gradients this render stopped referencing.
+	cache.gradients.sweep();
 
 	// Record what this render actually left behind.
 	cache.drewSomething = hasMarks;
-	cache.referencedGradientKeys = undefined;
 }

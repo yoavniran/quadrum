@@ -1,6 +1,7 @@
 import type { Piece, Role, Square, Color, Point } from "../types";
 import type { BoardState } from "../options";
 import { squareToPoint, ALL_SQUARES, fileIndex, rankIndex } from "../model/squares";
+import { setSquareAttr, setTransform } from "./placement";
 
 const ROLES: readonly string[] = ["king", "queen", "rook", "bishop", "knight", "pawn"];
 
@@ -65,12 +66,12 @@ function pieceTransform(square: Square, orientation: Color, offset?: Point): str
 }
 
 export function placePieceEl(el: HTMLElement, square: Square, orientation: Color, offset?: Point): void {
-	el.dataset.square = square;
-	el.style.transform = pieceTransform(square, orientation, offset);
+	setSquareAttr(el, square);
+	setTransform(el, pieceTransform(square, orientation, offset));
 }
 
 export function placePieceAtPoint(el: HTMLElement, point: Point): void {
-	el.style.transform = `translate(${(point.x - 0.5) * 100}%, ${(point.y - 0.5) * 100}%)`;
+	setTransform(el, `translate(${(point.x - 0.5) * 100}%, ${(point.y - 0.5) * 100}%)`);
 }
 
 export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, state: BoardState): void {
@@ -98,16 +99,11 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 			if (occupant && occupant.color === piece.color && occupant.role === piece.role) {
 				// The survivor keeps its element. Write only what actually differs:
 				// an unconditional write costs a style recalc per piece per render,
-				// which is the whole point of this pass. The transform is compared
-				// rather than inferred from the square, because an orientation flip
-				// moves every piece without any of them changing square.
-				const transform = pieceTransform(square, state.orientation);
-				if (existing.dataset.square !== square) {
-					existing.dataset.square = square;
-				}
-				if (existing.style.transform !== transform) {
-					existing.style.transform = transform;
-				}
+				// which is the whole point of this pass. The comparison is made against
+				// a JS-side record rather than by reading the DOM back. An orientation
+				// flip moves every piece without any of them changing square.
+				setSquareAttr(existing, square);
+				setTransform(existing, pieceTransform(square, state.orientation));
 				seen.add(square);
 				continue;
 			}
@@ -115,6 +111,13 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 
 		// This square needs a new element (capture, promotion, or first appearance).
 		// Don't handle it here; let the residual pass deal with it.
+	}
+
+	// Every piece survived in place: `vacated` and `needed` are both provably empty,
+	// so the two residual passes would walk `els` and `state.pieces` again to build
+	// nothing. `seen` is a subset of both key sets, so equal sizes means equal sets.
+	if (seen.size === state.pieces.size && seen.size === els.size) {
+		return;
 	}
 
 	// PASS 2: Residual matching. Collect elements that don't have survivors

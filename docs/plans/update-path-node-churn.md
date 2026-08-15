@@ -228,6 +228,58 @@ constraints from review:
 
 Risk: low.
 
+### Phase C.5 — script-side read-back elimination
+
+Inserted after C, on the evidence that the remaining `update-total-script-ms`
+gap is **script execution, not DOM work** — and that no other phase in this
+plan targets it.
+
+Phases A/B added write-avoidance guards to `renderPieces` PASS 1: compare the
+element's current `data-square` / `style.transform` against what the render
+wants, and skip the write when they match. Avoiding the write is right; reading
+the DOM to decide is not. Measured over 32 elements under a 4× CPU throttle:
+
+| operation (per 32-element pass) | µs |
+| --- | --- |
+| read `el.style.transform` | 28.3 |
+| read `el.dataset.square` | 7.3 |
+| write an identical `style.transform` | 24.2 |
+| read a JS-side record | **0.23** |
+
+The `style.transform` getter serializes the inline style on every read, so the
+guard was spending ~35.6 µs of reads to avoid ~24.2 µs of writes — a net loss.
+
+`view/placement.ts` moves the comparison to a `WeakMap<HTMLElement, Placement>`
+recording what we last wrote. The guard survives; the read-back does not.
+
+- **The mirror is only sound if it is the sole authority.** Any write to
+  `data-square` / `style.transform` that bypasses it leaves the record claiming
+  a position the element no longer holds, and the next render skips the
+  correcting write — a piece frozen mid-board. The animator in `board.ts` and
+  the drag path both write transforms directly and are routed through
+  `setTransform` for exactly this reason. `clearSquareAttr` in `renderSquares`
+  is likewise correctness, not speed: a pooled `qd-square` whose attribute was
+  removed behind the mirror's back would be re-acquired with a stale record.
+- **Early-out of the residual passes** when every piece survived in place
+  (`seen.size === state.pieces.size && seen.size === els.size`, and `seen` is a
+  subset of both key sets so equal sizes means equal sets). Passes 2 and 3
+  otherwise walk `els` and `state.pieces` again to build nothing.
+- **`applyOptions` no longer clones the piece map it is about to discard.** A
+  supplied `position` replaces it wholesale, and a position is supplied on
+  every ordinary update.
+
+Rejected: swapping `classList.contains("held")` for a `WeakSet`. Worth ~2.6 µs
+(~2%), but it makes the `held` class non-authoritative while leaving it
+applied — two sources of truth for one piece of state — and `renderPieces` is
+exported, so a consumer driving it with their own drag layer would break
+silently. Not worth 2%.
+
+Measured, same machine and throttle as the original profile: **113.4 → ~73–79 µs
+per `update()` (−31–36%)**; the no-op update case 93.8 → ~39–45 µs (−53–58%).
+Projected `update-total-script-ms` ratio 3.85× → ~2.5×.
+
+Risk: low-moderate — the mirror's soundness rests on the routing above.
+
 ### Phase D — arrow layer: node recycling and a pen-keyed gradient cache
 
 - Give `renderMarks` a **recycle pool**: nodes shed by the diff go to the pool

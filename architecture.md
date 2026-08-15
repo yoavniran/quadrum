@@ -44,8 +44,12 @@ src/
     position.ts   FEN placement ↔ Pieces map
     mobility.ts   premove target table (optional, opt-in)
     diffPlan.ts   old position + new position → moves / fades / appears
-  view/           DOM writers, no state of their own
+  view/           DOM writers, no state of their own (except placement.ts, which
+                  caches what was written so the render path never reads it back)
     layout.ts     builds the element skeleton once; wrap-level classes and coords
+    placement.ts  records what was last written to each element (the one stateful
+                  exception below); every data-square / style.transform write goes
+                  through it
     piecesView.ts creates and positions <qd-piece>
     squaresView.ts square decorations (target, recent, active, in-check, hover)
     marksView.ts  arrows, circles and badges into the two SVG layers

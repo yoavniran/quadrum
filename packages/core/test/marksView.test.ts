@@ -1,4 +1,5 @@
 import { renderMarks } from "../src/view/marksView";
+import { GRADIENT_POOL_CAPACITY } from "../src/view/markGradients";
 import { buildDom } from "../src/view/layout";
 import { defaultState, applyOptions } from "../src/options";
 import type { BoardState } from "../src/options";
@@ -67,15 +68,23 @@ describe("renderMarks", () => {
 		const stateEmpty = applyOptions(defaultState(), { marks: { enabled: true, auto: [], user: [] } });
 		render(dom, stateEmpty);
 
-		// Layers should be empty now.
-		expect(dom.marks.querySelectorAll("[data-mark]").length).toBe(0);
-		expect(dom.heads.childNodes.length).toBe(0);
-		expect(dom.badges.childNodes.length).toBe(0);
+		// Nothing is drawn any more. The shed nodes stay parked in their layer rather
+		// than being detached -- that is what makes the next render free -- so what has
+		// to hold is that nothing is findable and nothing paints, not that the layers
+		// are empty.
+		for (const layer of [dom.marks, dom.heads, dom.badges]) {
+			expect(layer.querySelectorAll("[data-mark], [data-mark-part]").length).toBe(0);
+			for (const parked of Array.from(layer.children)) {
+				if (parked.tagName !== "defs") {
+					expect(parked.getAttribute("display")).toBe("none");
+				}
+			}
+		}
 
-		// defs should still be present but empty.
+		// defs survives, holding no more than the parked gradients.
 		const defs = dom.marks.querySelector("defs");
 		expect(defs).not.toBeNull();
-		expect(defs!.childNodes.length).toBe(0);
+		expect(defs!.childElementCount).toBeLessThanOrEqual(GRADIENT_POOL_CAPACITY);
 	});
 
 	it("after clearing to empty, a further render touches nothing", () => {
@@ -229,7 +238,7 @@ describe("renderMarks", () => {
 			expect(finalCount).toBe(initialCount);
 		});
 
-		it("moving an arrow destination produces a different gradient and leaves no orphan", () => {
+		it("moving an arrow repeatedly recycles gradients instead of minting them", () => {
 			const dom = buildDom(container);
 			const defs = dom.marks.querySelector("defs")!;
 
@@ -238,29 +247,79 @@ describe("renderMarks", () => {
 			});
 			render(dom, state1);
 
-			const defsCountAfterFirst = defs.childNodes.length;
-			const firstGradients = Array.from(defs.querySelectorAll("linearGradient")) as SVGElement[];
-			expect(firstGradients.length).toBeGreaterThan(0);
+			expect(defs.querySelectorAll("linearGradient").length).toBe(1);
 
-			// Move the arrow.
+			// The first move has nothing parked to draw on yet, so it mints a second
+			// element; the one it displaced is parked in place rather than detached.
 			const state2 = applyOptions(defaultState(), {
 				marks: { enabled: true, auto: [{ from: "e2", to: "e5", pen: "red" }], user: [] },
 			});
 			render(dom, state2);
 
-			const defsCountAfterSecond = defs.childNodes.length;
-			const secondGradients = Array.from(defs.querySelectorAll("linearGradient")) as SVGElement[];
+			const afterMove = Array.from(defs.querySelectorAll("linearGradient"));
+			expect(afterMove.length).toBe(2);
 
-			// The gradient count should remain the same or be cleaned up (no unbounded growth).
-			expect(defsCountAfterSecond).toBeLessThanOrEqual(defsCountAfterFirst);
-			// The new gradient should be different from the old ones.
-			const newGradient = secondGradients.find(
-				(g) => !firstGradients.some((fg) => fg.id === g.id),
-			);
-			expect(newGradient).not.toBeUndefined();
+			// Every move after that is the steady state this pool exists for: the parked
+			// element is re-acquired and rewritten, so nothing new is created no matter
+			// how many times the arrow moves.
+			for (const to of ["e6", "e7", "e8", "e5", "e3"] as const) {
+				const next = applyOptions(defaultState(), {
+					marks: { enabled: true, auto: [{ from: "e2", to, pen: "red" }], user: [] },
+				});
+				render(dom, next);
+
+				const settled = Array.from(defs.querySelectorAll("linearGradient"));
+				expect(settled.length).toBe(2);
+				expect(settled.every((g) => afterMove.includes(g))).toBe(true);
+			}
 		});
 
-		it("removing the only translucent arrow removes its gradient from <defs>", () => {
+		it("an axis-aligned arrow gets a gradient in user space along its own axis", () => {
+			const dom = buildDom(container);
+			const defs = dom.marks.querySelector("defs")!;
+
+			// Along a file and along a rank: under the SVG default `objectBoundingBox`
+			// these have a degenerate zero-width or zero-height box and the fade would
+			// silently not render at all, which is why the units are pinned.
+			const cases = [
+				{ from: "e2", to: "e7", axis: "file" },
+				{ from: "b4", to: "g4", axis: "rank" },
+			] as const;
+
+			for (const { from, to, axis } of cases) {
+				render(
+					dom,
+					applyOptions(defaultState(), {
+						marks: { enabled: true, auto: [{ from, to, pen: "red" }], user: [] },
+					}),
+				);
+
+				const shaft = dom.marks.querySelector(`polygon[data-from="${from}"][data-to="${to}"]`)!;
+				const fill = shaft.getAttribute("fill")!;
+				expect(fill).toMatch(/^url\(#qd-fade-/);
+
+				const gradient = defs.querySelector(`#${fill.slice(5, -1)}`)!;
+				expect(gradient.getAttribute("gradientUnits")).toBe("userSpaceOnUse");
+				expect(gradient.hasAttribute("gradientTransform")).toBe(false);
+
+				const x1 = Number(gradient.getAttribute("x1"));
+				const y1 = Number(gradient.getAttribute("y1"));
+				const x2 = Number(gradient.getAttribute("x2"));
+				const y2 = Number(gradient.getAttribute("y2"));
+
+				// The ramp runs along the shaft, so the constant coordinate is the one
+				// perpendicular to the arrow and the other must actually vary.
+				if (axis === "file") {
+					expect(x1).toBe(x2);
+					expect(y1).not.toBe(y2);
+				} else {
+					expect(y1).toBe(y2);
+					expect(x1).not.toBe(x2);
+				}
+			}
+		});
+
+		it("removing the only translucent arrow leaves its gradient referenced by nothing", () => {
 			const dom = buildDom(container);
 			const defs = dom.marks.querySelector("defs")!;
 
@@ -269,8 +328,7 @@ describe("renderMarks", () => {
 			});
 			render(dom, state);
 
-			const defsCountWithArrow = defs.childNodes.length;
-			expect(defsCountWithArrow).toBeGreaterThan(0);
+			expect(defs.querySelectorAll("linearGradient").length).toBeGreaterThan(0);
 
 			// Render with no marks.
 			const emptyState = applyOptions(defaultState(), {
@@ -278,8 +336,17 @@ describe("renderMarks", () => {
 			});
 			render(dom, emptyState);
 
-			const defsCountAfterRemoval = defs.childNodes.length;
-			expect(defsCountAfterRemoval).toBe(0);
+			// The gradient is parked, not deleted: it stays in `defs` so the next
+			// translucent arrow can rewrite it instead of creating one. What matters is
+			// that nothing points at it any more, and that the pool bounds how many can
+			// accumulate.
+			expect(defs.querySelectorAll("linearGradient").length).toBeLessThanOrEqual(
+				GRADIENT_POOL_CAPACITY,
+			);
+			expect(dom.marks.querySelectorAll("[data-mark]").length).toBe(0);
+			for (const shaft of Array.from(dom.marks.querySelectorAll("polygon"))) {
+				expect(shaft.getAttribute("display")).toBe("none");
+			}
 		});
 
 		it("two boards on the same page never collide on a gradient id", () => {
@@ -452,7 +519,7 @@ describe("renderMarks", () => {
 			expect(bShaftAfter?.getAttribute("points")).not.toBe(bPoints);
 		});
 
-		it("removal: B's nodes are detached and gradient orphans cleaned up", () => {
+		it("removal: B's nodes are parked and stop matching any mark selector", () => {
 			const dom = buildDom(container);
 			const stateAB = applyOptions(defaultState(), {
 				marks: {
@@ -476,8 +543,10 @@ describe("renderMarks", () => {
 
 			render(dom, stateA);
 
-			// B's shaft is no longer in the DOM.
-			expect(bShaft?.parentNode).toBeNull();
+			// B's shaft keeps its parent -- un-parenting is the mutation the pool exists
+			// to avoid -- but it stops painting and stops answering mark selectors.
+			expect(bShaft?.getAttribute("display")).toBe("none");
+			expect(bShaft?.hasAttribute("data-mark")).toBe(false);
 			// B's marks are gone.
 			expect(dom.marks.querySelectorAll('polygon[data-from="a1"]').length).toBe(0);
 		});
@@ -598,8 +667,10 @@ describe("renderMarks", () => {
 
 			render(dom, stateCircle);
 
-			// Old arrow polygon is gone.
-			expect(arrowShaft?.parentNode).toBeNull();
+			// The old arrow polygon is parked: still parented, but invisible and stripped
+			// of the stamps, so nothing can find it and nothing paints it.
+			expect(arrowShaft?.getAttribute("display")).toBe("none");
+			expect(arrowShaft?.hasAttribute("data-from")).toBe(false);
 			// New circle is present.
 			const circle = dom.marks.querySelector('circle[data-from="e2"]');
 			expect(circle).toBeDefined();

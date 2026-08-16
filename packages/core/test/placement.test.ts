@@ -1,4 +1,4 @@
-import { setSquareAttr, clearSquareAttr, setTransform } from "../src/view/placement";
+import { setSquareAttr, clearSquareAttr, setTransform, setTranslate } from "../src/view/placement";
 
 describe("placement", () => {
 	it("setSquareAttr writes data-square the first time", () => {
@@ -69,5 +69,64 @@ describe("placement", () => {
 		setSquareAttr(el1, "c3");
 		expect(el1.dataset.square).toBe("c3");
 		expect(el2.dataset.square).toBe("b2");
+	});
+
+	// setTransform and setTranslate write the same property through two different
+	// guards, so each has to invalidate the other's record or one of them will
+	// skip a write the element genuinely needs.
+	describe("setTranslate", () => {
+		it("writes on the first call and elides an identical repeat", () => {
+			const el = document.createElement("qd-piece");
+
+			setTranslate(el, 3, 4);
+			expect(el.style.transform).toBe("translate(300%, 400%)");
+
+			el.style.transform = "";
+			setTranslate(el, 3, 4);
+			// Elided: the record still says (3, 4), so nothing was rewritten.
+			expect(el.style.transform).toBe("");
+		});
+
+		it("writes again when either coordinate changes", () => {
+			const el = document.createElement("qd-piece");
+
+			setTranslate(el, 3, 4);
+			setTranslate(el, 3, 5);
+			expect(el.style.transform).toBe("translate(300%, 500%)");
+		});
+
+		it("is elided by a setTransform that wrote the same translate", () => {
+			const el = document.createElement("qd-piece");
+
+			setTransform(el, "translate(300%, 400%)");
+			el.style.transform = "";
+			setTranslate(el, 3, 4);
+
+			expect(el.style.transform).toBe("translate(300%, 400%)");
+		});
+
+		it("re-writes coordinates that a setTransform has since overwritten", () => {
+			const el = document.createElement("qd-piece");
+
+			setTranslate(el, 3, 4);
+			// The drag layer parks the element somewhere else by string.
+			setTransform(el, "translate(50%, 50%)");
+			// Back to where the numeric record still claimed it was. Without the
+			// invalidation in setTransform this compares equal and the piece stays
+			// stuck at the drag position.
+			setTranslate(el, 3, 4);
+
+			expect(el.style.transform).toBe("translate(300%, 400%)");
+		});
+
+		it("elides a setTransform repeating the translate it just wrote", () => {
+			const el = document.createElement("qd-piece");
+
+			setTranslate(el, 3, 4);
+			el.style.transform = "";
+			setTransform(el, "translate(300%, 400%)");
+
+			expect(el.style.transform).toBe("");
+		});
 	});
 });

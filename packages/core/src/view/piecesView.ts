@@ -1,7 +1,7 @@
 import type { Piece, Role, Square, Color, Point } from "../types";
 import type { BoardState } from "../options";
-import { squareToPoint, ALL_SQUARES, fileIndex, rankIndex } from "../model/squares";
-import { setSquareAttr, setTransform } from "./placement";
+import { ALL_SQUARES, fileIndex, rankIndex } from "../model/squares";
+import { setSquareAttr, setTranslate } from "./placement";
 
 const ROLES: readonly string[] = ["king", "queen", "rook", "bishop", "knight", "pawn"];
 
@@ -58,20 +58,29 @@ export function pieceOf(el: HTMLElement): Piece | null {
 	return piece;
 }
 
-function pieceTransform(square: Square, orientation: Color, offset?: Point): string {
-	const point = squareToPoint(square, orientation);
-	const x = point.x + (offset?.x ?? 0);
-	const y = point.y + (offset?.y ?? 0);
-	return `translate(${x * 100}%, ${y * 100}%)`;
+// Inlined rather than calling squareToPoint, which returns a fresh {x, y} that
+// is read twice and dropped. This runs once per piece per render, so the object
+// was 32 allocations an update for two numbers.
+function placeAt(el: HTMLElement, square: Square, orientation: Color, offset?: Point): void {
+	const file = fileIndex(square);
+	const rank = rankIndex(square);
+	const white = orientation === "white";
+
+	setTranslate(
+		el,
+		(white ? file : 7 - file) + (offset?.x ?? 0),
+		(white ? 7 - rank : rank) + (offset?.y ?? 0),
+	);
 }
 
 export function placePieceEl(el: HTMLElement, square: Square, orientation: Color, offset?: Point): void {
 	setSquareAttr(el, square);
-	setTransform(el, pieceTransform(square, orientation, offset));
+	placeAt(el, square, orientation, offset);
 }
 
 export function placePieceAtPoint(el: HTMLElement, point: Point): void {
-	setTransform(el, `translate(${(point.x - 0.5) * 100}%, ${(point.y - 0.5) * 100}%)`);
+	// Centred on the pointer rather than on a square, hence the half-square shift.
+	setTranslate(el, point.x - 0.5, point.y - 0.5);
 }
 
 export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, state: BoardState): void {
@@ -103,7 +112,7 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 				// a JS-side record rather than by reading the DOM back. An orientation
 				// flip moves every piece without any of them changing square.
 				setSquareAttr(existing, square);
-				setTransform(existing, pieceTransform(square, state.orientation));
+				placeAt(existing, square, state.orientation);
 				seen.add(square);
 				continue;
 			}

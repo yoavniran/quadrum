@@ -1,18 +1,23 @@
 name: Release
 
-# Changesets-driven release for `quadrum` and `quadrum-react`.
+# release-please-driven release for `quadrum` and `quadrum-react`.
 #
 # How it works:
-#   1. Every PR that changes published code should add a changeset
-#      (`pnpm changeset`) describing the bump. This is not enforced -- ci.yml's
-#      "changeset" job only warns, since docs/CI-only PRs legitimately have none.
-#   2. On push to main, this workflow opens/updates a "Version Packages" PR that
-#      applies the pending changesets: bumps versions, rewrites CHANGELOG.md,
-#      deletes the consumed changeset files. The PR title names the version it
-#      would release, and the run summary spells out every bump.
-#   3. Merging that PR runs this workflow again; now there are no pending
-#      changesets, so the action publishes the packages to npm instead and tags
-#      the release on GitHub.
+#   1. Every commit that reaches main is read as a Conventional Commit. The type
+#      decides the bump (feat -> minor, fix/perf/build -> patch, `!` or a
+#      BREAKING CHANGE footer -> minor while pre-1.0), and the subject becomes a
+#      changelog line. Nothing is authored by hand -- there is no changeset file
+#      to forget, and a PR that needs no release simply has no releasable commit.
+#   2. release-please keeps a "chore: release X.Y.Z" PR open with the pending
+#      CHANGELOG.md and package.json edits. It rewrites that PR on every push.
+#   3. Merging it tags `quadrum@X.Y.Z` / `quadrum-react@X.Y.Z`, creates the GitHub
+#      releases, and sets `releases_created` -- which is what gates the publish
+#      job below.
+#
+# Which commits count for which package is decided by *path*: only commits that
+# touch `packages/core/**` can release `quadrum`. A `fix(bench):` on the
+# benchmark app releases nothing, which is the behaviour changesets could only
+# approximate by asking a human to remember.
 #
 # Authentication is npm **trusted publishing** (OIDC): there is no NPM_TOKEN.
 # npm verifies this workflow's identity directly and attaches provenance.
@@ -23,8 +28,8 @@ name: Release
 #
 #   1. GitHub -> repo Settings -> Actions -> General -> Workflow permissions:
 #      tick "Allow GitHub Actions to create and approve pull requests".
-#      WITHOUT THIS, step 2 above fails. The action pushes changeset-release/main
-#      successfully and then dies on:
+#      WITHOUT THIS, step 2 above fails: release-please pushes its release branch
+#      successfully and then dies on
 #        "GitHub Actions is not permitted to create or approve pull requests."
 #      The `pull-requests: write` permission below is necessary but NOT sufficient
 #      -- this org/repo toggle overrides it, and defaults to off.
@@ -49,22 +54,44 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  # Opens or refreshes the release PR. On the push that *merges* that PR, it
+  # instead cuts the tags and GitHub releases and reports which packages moved.
+  prepare:
     runs-on: ubuntu-latest
     permissions:
-      # Push the version branch and create GitHub releases.
+      # Push the release branch and create tags and GitHub releases.
       contents: write
-      # Open the "Version Packages" PR.
+      # Open the release PR.
       pull-requests: write
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      core_released: ${{ steps.release.outputs['packages/core--release_created'] }}
+      react_released: ${{ steps.release.outputs['packages/react--release_created'] }}
+    steps:
+      # No checkout: the action reads history and writes its branch through the
+      # API, so a working copy would only be dead weight.
+      - name: Release PR or tag
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Runs only on the push that merged a release PR, so `github.sha` is the
+  # release commit and the versions in the tree are the ones just tagged.
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
       # Mint the OIDC token npm trades for publish rights. Without this,
       # trusted publishing fails with an authentication error.
       id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          # Changesets reads history to work out what changed since the last tag.
-          fetch-depth: 0
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
@@ -84,48 +111,35 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # The release must not be able to ship something that doesn't compile.
+      # The release is already tagged by the time this runs, so a failure here
+      # means a bad tag rather than a bad publish -- but shipping a package that
+      # doesn't compile is strictly worse than a tag with no tarball behind it.
       - name: Verify
         run: |
           pnpm typecheck
           pnpm test
 
-      # changesets/action takes the PR title as a *static* input, resolved before
-      # `changeset version` ever runs -- so for the title to name the version, the
-      # version has to be worked out first. `changeset status` builds the same
-      # release plan and only reports it; it writes nothing, and exits 0 with an
-      # empty plan on a publish run, where the title is unused anyway.
-      #
-      # The plan goes to RUNNER_TEMP, not the workspace: changesets/action commits
-      # what it finds in the tree, and a stray file would land in the version PR.
-      - name: Work out the pending version
-        id: pending
-        run: |
-          pnpm exec changeset status --output="$RUNNER_TEMP/changeset-status.json"
-          node .github/scripts/write-release-report.mjs pending "$RUNNER_TEMP/changeset-status.json"
+      - name: Build
+        run: pnpm build
 
-      - name: Version PR or publish
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          version: pnpm changeset version
-          publish: pnpm release
-          title: ${{ steps.pending.outputs.title }}
-          commit: ${{ steps.pending.outputs.commit }}
-          createGithubReleases: true
+      # `pnpm publish` rather than `npm publish`: react devDepends on
+      # `quadrum: workspace:*`, and only pnpm rewrites that protocol to a real
+      # version on the way into the tarball. --no-git-checks because the runner
+      # is on a detached HEAD, which pnpm otherwise refuses to publish from.
+      #
+      # Core first: quadrum-react peer-depends on it, so a consumer installing
+      # the pair in the window between the two must not find react pointing at a
+      # version that isn't on the registry yet.
+      - name: Publish quadrum
+        if: needs.prepare.outputs.core_released == 'true'
+        working-directory: packages/core
+        run: pnpm publish --no-git-checks
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
 
-      # Which half ran is only known afterwards, so both are summarised here.
-      # The action's outputs reach the script through env rather than string
-      # interpolation: they carry JSON, and one of them is package metadata.
-      - name: Summarise the release
-        if: always() && steps.pending.outcome == 'success'
-        run: node .github/scripts/write-release-report.mjs summary
+      - name: Publish quadrum-react
+        if: needs.prepare.outputs.react_released == 'true'
+        working-directory: packages/react
+        run: pnpm publish --no-git-checks
         env:
-          PENDING_PACKAGES: ${{ steps.pending.outputs.packages }}
-          PENDING_VERSION: ${{ steps.pending.outputs.version }}
-          PUBLISHED: ${{ steps.changesets.outputs.published }}
-          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.publishedPackages }}
-          PR_NUMBER: ${{ steps.changesets.outputs.pullRequestNumber }}
+          NPM_CONFIG_PROVENANCE: "true"

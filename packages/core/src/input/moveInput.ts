@@ -1,7 +1,7 @@
 import type { Piece, Square, Point } from "../types";
 import type { BoardState } from "../options";
 import type { BoardDom } from "../view/layout";
-import { createPieceEl, placePieceEl, placePieceAtPoint } from "../view/piecesView";
+import { createPieceEl, markHeld, placePieceEl, placePieceAtPoint } from "../view/piecesView";
 import { ALL_SQUARES } from "../model/squares";
 
 export interface MoveContext {
@@ -79,7 +79,7 @@ export function createMoveController(ctx: MoveContext): MoveController {
 
 			const el = ctx.pieceEls().get(draggedSquare);
 			if (el) {
-				el.classList.remove("held");
+				markHeld(el, false);
 			}
 		}
 
@@ -141,7 +141,7 @@ export function createMoveController(ctx: MoveContext): MoveController {
 					// Add class held to the piece element
 					const el = ctx.pieceEls().get(draggedSquare);
 					if (el) {
-						el.classList.add("held");
+						markHeld(el, true);
 
 						// Create trace element
 						const piece = state.pieces.get(draggedSquare);

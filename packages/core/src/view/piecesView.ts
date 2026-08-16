@@ -18,8 +18,38 @@ function isRole(value: string | undefined): value is Role {
 // something the engine can inline where a WeakMap lookup is not.
 const PIECE = Symbol("quadrum.piece");
 
+// Monotonic across renders, so a stamp from an earlier render never reads as
+// alive in this one.
+let renderTick = 0;
+
 interface PieceCarrier {
 	[PIECE]?: Piece;
+}
+
+// Held-by-the-drag-layer, and which render last saw an element alive.
+//
+// `held` is also a class, because the stylesheet and the e2e suite both select
+// on it, but the render path must not ask the DOM: renderPieces consults it
+// once per piece, and classList.contains is a binding call across into the DOM
+// where this is a property read.
+const HELD = Symbol("quadrum.held");
+const ALIVE = Symbol("quadrum.alive");
+
+interface FlagCarrier {
+	[HELD]?: boolean;
+	[ALIVE]?: number;
+}
+
+export function markHeld(el: HTMLElement, held: boolean): void {
+	el.classList.toggle("held", held);
+	(el as HTMLElement & FlagCarrier)[HELD] = held;
+}
+
+export function isHeld(el: HTMLElement): boolean {
+	// The class is authoritative for an element the flag never reached -- one
+	// built by cloneNode, or handed in by a consumer.
+	const flag = (el as HTMLElement & FlagCarrier)[HELD];
+	return flag === undefined ? el.classList.contains("held") : flag;
 }
 
 function remember(el: HTMLElement, piece: Piece): Piece {
@@ -89,11 +119,18 @@ export function placePieceAtPoint(el: HTMLElement, point: Point): void {
 }
 
 export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, state: BoardState): void {
-	const seen = new Set<Square>();
+	// Survivors are marked on the element with this render's tick rather than
+	// collected into a Set of squares. The Set cost an allocation plus a hashed
+	// insert per piece -- 32 an update whose only reader is a membership test
+	// the tick answers with a number comparison. It also had to be built for
+	// every piece even though the passes below only ever ask about the handful
+	// that did not survive.
+	const tick = ++renderTick;
+	const needed: Square[] = [];
+	let survivors = 0;
 
 	// PASS 1: Survivors. For each piece in state, if the square already has
-	// an element with a matching piece, keep it. Only mark as seen if we kept it.
-	// Skip held elements.
+	// an element with a matching piece, keep it. Skip held elements.
 	for (const [square, piece] of state.pieces) {
 		const existing = els.get(square);
 
@@ -103,8 +140,9 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 		// overwrites the map entry the drag layer looks itself up by, so `held`
 		// never comes off and the stray never leaves. Skip it outright, exactly
 		// as the removal pass below does.
-		if (existing?.classList.contains("held")) {
-			seen.add(square);
+		if (existing && isHeld(existing)) {
+			(existing as HTMLElement & FlagCarrier)[ALIVE] = tick;
+			survivors++;
 			continue;
 		}
 
@@ -121,19 +159,20 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 				// a JS-side record rather than by reading the DOM back. An orientation
 				// flip moves every piece without any of them changing square.
 				placePieceEl(existing, square, state.orientation);
-				seen.add(square);
+				(existing as HTMLElement & FlagCarrier)[ALIVE] = tick;
+				survivors++;
 				continue;
 			}
 		}
 
 		// This square needs a new element (capture, promotion, or first appearance).
-		// Don't handle it here; let the residual pass deal with it.
+		needed.push(square);
 	}
 
-	// Every piece survived in place: `vacated` and `needed` are both provably empty,
-	// so the two residual passes would walk `els` and `state.pieces` again to build
-	// nothing. `seen` is a subset of both key sets, so equal sizes means equal sets.
-	if (seen.size === state.pieces.size && seen.size === els.size) {
+	// Every piece survived in place: `vacated` is provably empty too, so the
+	// residual passes would walk `els` to build nothing. Survivors are distinct
+	// elements of `els`, so an equal count means every entry survived.
+	if (survivors === state.pieces.size && survivors === els.size) {
 		return;
 	}
 
@@ -156,17 +195,14 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 	}
 
 	const vacated: Array<[Square, HTMLElement]> = [];
-	const needed: Square[] = [];
 
 	for (const [square, el] of els) {
-		if (!seen.has(square) && !el.classList.contains("held")) {
+		// The held test stays: a held element can sit on a square the new
+		// position does not list at all, so PASS 1 never reaches it and never
+		// stamps it alive. Without this it reads as vacated and gets removed
+		// out from under the drag.
+		if ((el as HTMLElement & FlagCarrier)[ALIVE] !== tick && !isHeld(el)) {
 			vacated.push([square, el]);
-		}
-	}
-
-	for (const square of state.pieces.keys()) {
-		if (!seen.has(square)) {
-			needed.push(square);
 		}
 	}
 

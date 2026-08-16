@@ -1,5 +1,5 @@
 import type { Piece, Square } from "../src/types";
-import { createPieceEl, pieceOf, renderPieces } from "../src/view/piecesView";
+import { createPieceEl, markHeld, pieceOf, renderPieces } from "../src/view/piecesView";
 import { defaultState } from "../src/options";
 import { fenToPieces } from "../src/model/position";
 
@@ -202,6 +202,52 @@ describe("piecesView reuse and registry", () => {
 			expect(els.get("e2")).toBe(heldEl);
 			expect(heldEl?.classList.contains("held")).toBe(true);
 			expect(heldEl?.parentNode).toBe(board);
+		});
+
+		// Survivors are stamped with the render's tick as PASS 1 walks the new
+		// position. A held piece whose square is not in that position is never
+		// walked, so it carries no stamp and would read as vacated -- removed out
+		// from under the drag. This is the case the separate held test guards.
+		it("keeps a held element on a square the new position does not list", () => {
+			const state = defaultState();
+			state.pieces = fenToPieces("4k3/8/8/8/8/8/4P3/4K3");
+
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			const heldEl = els.get("e2")!;
+			markHeld(heldEl, true);
+			expect(heldEl.classList.contains("held")).toBe(true);
+
+			// The pawn has left e2 and is not yet anywhere else: exactly what the
+			// state looks like mid-drag once the caller has removed it.
+			const lifted = defaultState();
+			lifted.pieces = fenToPieces("4k3/8/8/8/8/8/8/4K3");
+
+			renderPieces(board, els, lifted);
+
+			expect(els.get("e2")).toBe(heldEl);
+			expect(heldEl.parentNode).toBe(board);
+		});
+
+		it("markHeld(false) hands the element back to the render path", () => {
+			const state = defaultState();
+			state.pieces = fenToPieces("4k3/8/8/8/8/8/4P3/4K3");
+
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			const el = els.get("e2")!;
+			markHeld(el, true);
+			markHeld(el, false);
+
+			const lifted = defaultState();
+			lifted.pieces = fenToPieces("4k3/8/8/8/8/8/8/4K3");
+
+			renderPieces(board, els, lifted);
+
+			expect(els.has("e2")).toBe(false);
+			expect(el.parentNode).toBeNull();
 		});
 	});
 

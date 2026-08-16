@@ -1,4 +1,4 @@
-import { setSquareAttr, clearSquareAttr, setTransform, setTranslate } from "../src/view/placement";
+import { setSquareAttr, clearSquareAttr, placeSquare, setTransform, setTranslate } from "../src/view/placement";
 
 describe("placement", () => {
 	it("setSquareAttr writes data-square the first time", () => {
@@ -117,6 +117,44 @@ describe("placement", () => {
 			setTranslate(el, 3, 4);
 
 			expect(el.style.transform).toBe("translate(300%, 400%)");
+		});
+
+		// placeSquare shares one record between the two writes, so it has to end up
+		// in exactly the state the two separate calls would have left behind --
+		// including each guard staying independent of the other.
+		it("placeSquare writes both the attribute and the translate", () => {
+			const el = document.createElement("qd-piece");
+
+			placeSquare(el, "a1", 3, 4);
+
+			expect(el.dataset.square).toBe("a1");
+			expect(el.style.transform).toBe("translate(300%, 400%)");
+		});
+
+		it("placeSquare guards each write separately", () => {
+			const el = document.createElement("qd-piece");
+			placeSquare(el, "a1", 3, 4);
+
+			el.removeAttribute("data-square");
+			el.style.transform = "";
+			// Same square, moved: only the translate is genuinely new.
+			placeSquare(el, "a1", 3, 5);
+
+			expect(el.dataset.square).toBeUndefined();
+			expect(el.style.transform).toBe("translate(300%, 500%)");
+		});
+
+		it("placeSquare shares its record with the single-purpose writers", () => {
+			const el = document.createElement("qd-piece");
+			placeSquare(el, "a1", 3, 4);
+
+			el.removeAttribute("data-square");
+			el.style.transform = "";
+			setSquareAttr(el, "a1");
+			setTranslate(el, 3, 4);
+
+			expect(el.dataset.square).toBeUndefined();
+			expect(el.style.transform).toBe("");
 		});
 
 		it("elides a setTransform repeating the translate it just wrote", () => {

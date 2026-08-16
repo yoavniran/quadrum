@@ -1,7 +1,7 @@
 import type { Piece, Role, Square, Color, Point } from "../types";
 import type { BoardState } from "../options";
 import { ALL_SQUARES, fileIndex, rankIndex } from "../model/squares";
-import { setSquareAttr, setTranslate } from "./placement";
+import { placeSquare, setTranslate } from "./placement";
 
 const ROLES: readonly string[] = ["king", "queen", "rook", "bishop", "knight", "pawn"];
 
@@ -9,22 +9,35 @@ function isRole(value: string | undefined): value is Role {
 	return value !== undefined && ROLES.includes(value);
 }
 
-// Weak registry of HTMLElement -> Piece. Eliminates per-piece string parsing on
-// every render. Entries are written by createPieceEl and populated on fallback
-// hits in pieceOf, allowing old or cloned elements to still work.
-const pieceRegistry = new WeakMap<HTMLElement, Piece>();
+// What piece an element holds, remembered on the element itself. Eliminates
+// per-piece string parsing on every render. Written by createPieceEl and on
+// fallback hits in pieceOf, so old or cloned elements still work.
+//
+// A private symbol rather than a WeakMap for the same reason as the placement
+// record: this is read once per piece per render, and a property access is
+// something the engine can inline where a WeakMap lookup is not.
+const PIECE = Symbol("quadrum.piece");
+
+interface PieceCarrier {
+	[PIECE]?: Piece;
+}
+
+function remember(el: HTMLElement, piece: Piece): Piece {
+	(el as HTMLElement & PieceCarrier)[PIECE] = piece;
+	return piece;
+}
 
 export function createPieceEl(piece: Piece): HTMLElement {
 	const el = document.createElement("qd-piece");
 	el.classList.add(piece.color, piece.role);
 	el.dataset.piece = `${piece.color}-${piece.role}`;
-	pieceRegistry.set(el, piece);
+	remember(el, piece);
 	return el;
 }
 
 export function pieceOf(el: HTMLElement): Piece | null {
-	// Registry is the fast path: one WeakMap lookup.
-	const registered = pieceRegistry.get(el);
+	// The remembered piece is the fast path: one property read.
+	const registered = (el as HTMLElement & PieceCarrier)[PIECE];
 	if (registered) {
 		return registered;
 	}
@@ -37,9 +50,7 @@ export function pieceOf(el: HTMLElement): Piece | null {
 		const color = parts[0];
 		const role = parts[1];
 		if ((color === "white" || color === "black") && isRole(role)) {
-			const piece: Piece = { color, role };
-			pieceRegistry.set(el, piece);
-			return piece;
+			return remember(el, { color, role });
 		}
 	}
 
@@ -53,29 +64,23 @@ export function pieceOf(el: HTMLElement): Piece | null {
 	}
 
 	el.dataset.piece = `${colorFromClass}-${roleFromClass}`;
-	const piece: Piece = { color: colorFromClass, role: roleFromClass };
-	pieceRegistry.set(el, piece);
-	return piece;
+	return remember(el, { color: colorFromClass, role: roleFromClass });
 }
 
 // Inlined rather than calling squareToPoint, which returns a fresh {x, y} that
 // is read twice and dropped. This runs once per piece per render, so the object
 // was 32 allocations an update for two numbers.
-function placeAt(el: HTMLElement, square: Square, orientation: Color, offset?: Point): void {
+export function placePieceEl(el: HTMLElement, square: Square, orientation: Color, offset?: Point): void {
 	const file = fileIndex(square);
 	const rank = rankIndex(square);
 	const white = orientation === "white";
 
-	setTranslate(
+	placeSquare(
 		el,
+		square,
 		(white ? file : 7 - file) + (offset?.x ?? 0),
 		(white ? 7 - rank : rank) + (offset?.y ?? 0),
 	);
-}
-
-export function placePieceEl(el: HTMLElement, square: Square, orientation: Color, offset?: Point): void {
-	setSquareAttr(el, square);
-	placeAt(el, square, orientation, offset);
 }
 
 export function placePieceAtPoint(el: HTMLElement, point: Point): void {
@@ -105,14 +110,17 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 
 		if (existing) {
 			const occupant = pieceOf(existing);
-			if (occupant && occupant.color === piece.color && occupant.role === piece.role) {
+			// Identity first: pieces parsed out of a placement are interned, so
+			// the common case is one pointer comparison rather than two string
+			// ones. The field comparison still has to follow, for elements whose
+			// piece was reconstructed from the DOM by pieceOf's fallback.
+			if (occupant === piece || (occupant && occupant.color === piece.color && occupant.role === piece.role)) {
 				// The survivor keeps its element. Write only what actually differs:
 				// an unconditional write costs a style recalc per piece per render,
 				// which is the whole point of this pass. The comparison is made against
 				// a JS-side record rather than by reading the DOM back. An orientation
 				// flip moves every piece without any of them changing square.
-				setSquareAttr(existing, square);
-				placeAt(existing, square, state.orientation);
+				placePieceEl(existing, square, state.orientation);
 				seen.add(square);
 				continue;
 			}

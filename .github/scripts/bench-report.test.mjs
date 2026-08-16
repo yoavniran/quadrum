@@ -380,6 +380,53 @@ describe("compareToBaseline", () => {
 		expect(gate.ok).toBe(true);
 	});
 
+	it("reports inconclusive on a faster runner, not just a slower one", () => {
+		// PR #49, 2026-08-15: the runner was 2.39x quicker than the baseline
+		// machine, chessground gained more from it than quadrum did, and the
+		// ratio moved from 0.910 to 1.341 on a diff that touches only the marks
+		// path. Under the old 2.5x allowance this scored as a quadrum regression
+		// -- while quadrum's own absolute had *improved*. Drift is drift in
+		// either direction.
+		const gate = compareToBaseline(
+			summary([
+				scenario({
+					metrics: [
+						metric({
+							quadrum: { median: 5.6, ci95: [5.5, 5.7] },
+							chessground: { median: 10 / 2.39, ci95: [4.1, 4.3] },
+						}),
+					],
+				}),
+			]),
+			base,
+		);
+
+		expect(statusOf(gate, "mount")).toBe("inconclusive");
+		expect(gate.ok).toBe(true);
+	});
+
+	it("still gates when the drift is small enough for the ratio to mean something", () => {
+		// The guard must not become a blanket amnesty: a 1.2x machine difference
+		// is inside the allowance, so a confident regression measured on it is
+		// still a regression.
+		const gate = compareToBaseline(
+			summary([
+				scenario({
+					metrics: [
+						metric({
+							quadrum: { median: 14.4, ci95: [14.3, 14.5] },
+							chessground: { median: 12, ci95: [11.9, 12.1] },
+						}),
+					],
+				}),
+			]),
+			base,
+		);
+
+		expect(statusOf(gate, "mount")).toBe("fail");
+		expect(gate.ok).toBe(false);
+	});
+
 	it("fails when a baseline scenario is missing from the results", () => {
 		// Deleting an inconvenient benchmark is invisible to every other check.
 		const gate = compareToBaseline(summary([]), base);

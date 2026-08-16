@@ -291,7 +291,7 @@ forced to delete the list.
 
 ```
 threshold      = baseline.ratio * (1 + tolerance)     // tolerance 0.15
-inconclusive   if chessground's own absolute drifted beyond 2.5x from baseline
+inconclusive   if chessground's own absolute drifted beyond 1.5x from baseline
 fail           if observed.ci95[0] > threshold        // the LOWER bound
 warn           if observed.ratio   > threshold
 pass           otherwise
@@ -307,6 +307,17 @@ Two guards against the ratio's own failure modes: **bundle size is gated absolut
 catching a regression that hits both subjects, and the **environment sanity check** returns
 `inconclusive` — neutral, not pass, not fail — when chessground's absolute has moved too far to
 trust the run at all.
+
+That 1.5× allowance is calibrated, not chosen for roundness. "Cancels to first order" is exactly
+what it says: the two subjects do not scale *identically* with machine speed, so drift and ratio
+error are coupled. Two runs of the same commit range on 2026-08-15 measured it — at **1.03×**
+drift the ratio landed **13.6%** off baseline, already most of the 15% tolerance, and at **2.39×**
+it landed **67%** off. The earlier 2.5× allowance therefore admitted ratio error several times
+larger than the tolerance it was protecting, and failed PR #49 on a runner that happened to be
+2.39× quicker while quadrum's own absolute had *improved*. Erring tight is the safe direction
+here: an inconclusive verdict is green, so a false inconclusive costs one run's coverage where a
+false failure costs trust in the gate. The remedy for frequent inconclusives is re-minting the
+baseline on comparable hardware, never widening the factor.
 
 Failing on the *lower* CI bound is deliberately asymmetric. False failures destroy trust in a gate
 far faster than false passes destroy a codebase, so noise buys a warning, never a red X.

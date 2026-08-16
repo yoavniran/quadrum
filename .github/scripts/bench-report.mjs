@@ -48,8 +48,24 @@ export const DEFAULT_BUNDLE_TOLERANCE = 0.12;
 /**
  * How far chessground's own absolute timing may drift from baseline before the
  * run is called inconclusive rather than trusted.
+ *
+ * Calibrated from two real runs of the same commit range on 2026-08-15, not
+ * guessed. The ratio only cancels machine speed to first order: the two subjects
+ * do not scale identically with it, so drift and ratio error are coupled. At
+ * 1.03x drift the observed ratio landed 13.6% off baseline -- already most of
+ * the 15% tolerance -- and at 2.39x drift it landed 67% off. The old 2.5x
+ * allowance therefore permitted ratio error several times the tolerance it was
+ * meant to protect, and PR #49 was failed by a 2.39x faster runner rather than
+ * by its diff (quadrum's own absolute *improved* on that run). 1.5x is the
+ * largest factor that still would have caught it.
+ *
+ * Erring tight is deliberate and matches the gate's stated asymmetry: an
+ * inconclusive verdict is neutral and green, so a false inconclusive costs one
+ * run's coverage, while a false failure costs trust in the gate. If runs start
+ * coming back inconclusive routinely, the fix is to re-mint the baseline on
+ * comparable hardware, not to widen this.
  */
-export const DEFAULT_SANITY_DRIFT_FACTOR = 2.5;
+export const DEFAULT_SANITY_DRIFT_FACTOR = 1.5;
 
 /** A gated scenario must be able to detect a regression at or below this
  *  fraction over baseline, or gating it is theatre rather than a gate. */

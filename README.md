@@ -50,16 +50,16 @@ dev-only dependency of the benchmark app and never shipped.
 <!-- bench:headline:start -->
 | Scenario | quadrum | chessground 9.2.1 | Ratio |
 | --- | --- | --- | --- |
-| Mount a full board | 1.45 ms | 1.02 ms | 1.43× — **chessground wins** |
-| 100 position updates, animation off | 23.19 ms | 5.40 ms | 4.29× — **chessground wins** |
+| Mount a full board | 1.50 ms | 1.32 ms | 1.13× — **chessground wins** |
+| 100 position updates, animation off | 24.04 ms | 8.91 ms | 2.70× — **chessground wins** |
 | 100 position updates, animation on | 16.67 ms | 16.67 ms | 1.00× — parity |
-| Engine arrow re-draw, per tick | 26.98 ms | 13.48 ms | 2.00× — **chessground wins** |
-| Drag latency, p95 | **19.44 ms** | 20.03 ms | **0.97× — quadrum wins** ✅ |
-| Resize storm, 50 resizes | **0.06 ms** | 0.78 ms | **0.08× — quadrum wins** ✅ |
+| Engine arrow re-draw, per tick | 39.69 ms | 27.93 ms | 1.42× — **chessground wins** |
+| Drag latency, p95 | **19.51 ms** | 20.00 ms | **0.98× — quadrum wins** ✅ |
+| Resize storm, 50 resizes | **0.17 ms** | 1.06 ms | **0.16× — quadrum wins** ✅ |
 | Retention after teardown | 0 | 0 | 1.00× — parity |
-| Bundle size, min+brotli | **10.3 kB** | 11.1 kB | **0.93× — quadrum wins** ✅ |
+| Bundle size, min+brotli | **10.6 kB** | 11.1 kB | **0.96× — quadrum wins** ✅ |
 
-*Medians. Measured 2026-08-15 on linux/x64 (4 vCPU INTEL(R) XEON(R) PLATINUM 8573C), headless Chromium 151.0.7922.34, CPU throttled 4×, 15 repetitions interleaved. quadrum `0.2.2` @ `f880f7f` vs chessground `9.2.1`. "Parity" means the 95% confidence intervals overlap — a difference too small to claim.*
+*Medians. Measured 2026-08-16 on linux/x64 (4 vCPU AMD EPYC 7763 64-Core Processor), headless Chromium 151.0.7922.34, CPU throttled 4×, 15 repetitions interleaved. quadrum `0.2.2` @ `cc918e1` vs chessground `9.2.1`. "Parity" means the 95% confidence intervals overlap — a difference too small to claim.*
 
 - CPU throttle rate: 4
 - Headless has no real vsync; frame-derived metrics are advisory

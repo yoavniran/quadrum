@@ -88,9 +88,14 @@ export async function startPreview(
 	// which on macOS resolves to ::1 first, so polling (and Playwright navigating)
 	// 127.0.0.1 is refused by a server that is otherwise perfectly healthy.
 	const args = ["exec", "vite", "preview", "--port", String(port), "--strictPort", "--host", "127.0.0.1"];
+	// `detached` puts the child in its own process group so we can signal the whole
+	// group later. `pnpm exec` makes vite a *grandchild*, and signalling pnpm alone
+	// leaves vite alive holding the port -- the orphans that eventually exhaust the
+	// whole range and take the runner down with them.
 	const proc = spawn("pnpm", args, {
 		cwd,
 		stdio: ["ignore", "pipe", "pipe"],
+		detached: true,
 	});
 
 	const url = `http://127.0.0.1:${port}/`;
@@ -141,21 +146,23 @@ export async function startPreview(
 	}
 
 	if (lastError) {
-		proc.kill();
+		killGroup(proc, "SIGKILL");
 		throw new Error(
 			`Failed to start preview server at ${url} after ${attempts} attempts: ${lastError.message}\n${output}`,
 		);
 	}
 
 	const stop = async (): Promise<void> => {
+		detachBailout();
+
 		return new Promise((resolve) => {
 			if (exitCode !== null) {
 				resolve();
 				return;
 			}
-			proc.kill("SIGTERM");
+			killGroup(proc, "SIGTERM");
 			const timeout = setTimeout(() => {
-				proc.kill("SIGKILL");
+				killGroup(proc, "SIGKILL");
 				resolve();
 			}, 5000);
 			proc.once("exit", () => {
@@ -165,5 +172,51 @@ export async function startPreview(
 		});
 	};
 
+	// A crash or a Ctrl-C skips the runner's `finally`, and the preview server
+	// outlives the run holding its port. These handlers are the backstop; `stop`
+	// removes them so a normal shutdown does not accumulate listeners.
+	const detachBailout = registerBailout(proc);
+
 	return { url, stop };
+}
+
+/**
+ * Signal the child's whole process group.
+ *
+ * `pnpm exec` means the process we spawned is pnpm and vite is its child, so
+ * signalling the pid alone reaps the wrapper and orphans the server. Negating the
+ * pid targets the group, which `detached: true` made the child the leader of.
+ */
+function killGroup(proc: { pid?: number }, signal: NodeJS.Signals): void {
+	if (proc.pid === undefined) {
+		return;
+	}
+
+	try {
+		process.kill(-proc.pid, signal);
+	} catch {
+		// ESRCH: the group is already gone, which is the outcome we wanted.
+	}
+}
+
+/** Kills `proc`'s group if this process goes down without running its cleanup. */
+function registerBailout(proc: { pid?: number }): () => void {
+	const onExit = (): void => killGroup(proc, "SIGKILL");
+	const onSignal = (signal: NodeJS.Signals) => (): void => {
+		killGroup(proc, "SIGKILL");
+		process.exit(signal === "SIGINT" ? 130 : 143);
+	};
+
+	const onSigint = onSignal("SIGINT");
+	const onSigterm = onSignal("SIGTERM");
+
+	process.on("exit", onExit);
+	process.on("SIGINT", onSigint);
+	process.on("SIGTERM", onSigterm);
+
+	return () => {
+		process.off("exit", onExit);
+		process.off("SIGINT", onSigint);
+		process.off("SIGTERM", onSigterm);
+	};
 }

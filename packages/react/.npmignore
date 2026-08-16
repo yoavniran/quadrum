@@ -78,7 +78,6 @@ babel.config.*
 .gitattributes
 .github/
 .gitlab-ci.yml
-.changeset/
 .husky/
 .editorconfig
 .eslintrc*
@@ -144,6 +143,6 @@ test-results/
 architecture.md
 CONTRIBUTING.md
 
-# Note: CHANGELOG.md is deliberately NOT ignored. changesets writes one per
-# package, and shipping it is conventional -- but it only reaches the tarball
+# Note: CHANGELOG.md is deliberately NOT ignored. release-please writes one
+# per package, and shipping it is conventional -- but it only reaches the tarball
 # if `files` gains a "CHANGELOG.md" entry, since `files` governs today.

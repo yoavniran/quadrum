@@ -1,7 +1,7 @@
 import type { Piece, Role, Square, Color, Point } from "../types";
 import type { BoardState } from "../options";
-import { squareToPoint, ALL_SQUARES, fileIndex, rankIndex } from "../model/squares";
-import { setSquareAttr, setTransform } from "./placement";
+import { ALL_SQUARES, fileIndex, rankIndex } from "../model/squares";
+import { placeSquare, setTranslate } from "./placement";
 
 const ROLES: readonly string[] = ["king", "queen", "rook", "bishop", "knight", "pawn"];
 
@@ -9,22 +9,65 @@ function isRole(value: string | undefined): value is Role {
 	return value !== undefined && ROLES.includes(value);
 }
 
-// Weak registry of HTMLElement -> Piece. Eliminates per-piece string parsing on
-// every render. Entries are written by createPieceEl and populated on fallback
-// hits in pieceOf, allowing old or cloned elements to still work.
-const pieceRegistry = new WeakMap<HTMLElement, Piece>();
+// What piece an element holds, remembered on the element itself. Eliminates
+// per-piece string parsing on every render. Written by createPieceEl and on
+// fallback hits in pieceOf, so old or cloned elements still work.
+//
+// A private symbol rather than a WeakMap for the same reason as the placement
+// record: this is read once per piece per render, and a property access is
+// something the engine can inline where a WeakMap lookup is not.
+const PIECE = Symbol("quadrum.piece");
+
+// Monotonic across renders, so a stamp from an earlier render never reads as
+// alive in this one.
+let renderTick = 0;
+
+interface PieceCarrier {
+	[PIECE]?: Piece;
+}
+
+// Held-by-the-drag-layer, and which render last saw an element alive.
+//
+// `held` is also a class, because the stylesheet and the e2e suite both select
+// on it, but the render path must not ask the DOM: renderPieces consults it
+// once per piece, and classList.contains is a binding call across into the DOM
+// where this is a property read.
+const HELD = Symbol("quadrum.held");
+const ALIVE = Symbol("quadrum.alive");
+
+interface FlagCarrier {
+	[HELD]?: boolean;
+	[ALIVE]?: number;
+}
+
+export function markHeld(el: HTMLElement, held: boolean): void {
+	el.classList.toggle("held", held);
+	(el as HTMLElement & FlagCarrier)[HELD] = held;
+}
+
+export function isHeld(el: HTMLElement): boolean {
+	// The class is authoritative for an element the flag never reached -- one
+	// built by cloneNode, or handed in by a consumer.
+	const flag = (el as HTMLElement & FlagCarrier)[HELD];
+	return flag === undefined ? el.classList.contains("held") : flag;
+}
+
+function remember(el: HTMLElement, piece: Piece): Piece {
+	(el as HTMLElement & PieceCarrier)[PIECE] = piece;
+	return piece;
+}
 
 export function createPieceEl(piece: Piece): HTMLElement {
 	const el = document.createElement("qd-piece");
 	el.classList.add(piece.color, piece.role);
 	el.dataset.piece = `${piece.color}-${piece.role}`;
-	pieceRegistry.set(el, piece);
+	remember(el, piece);
 	return el;
 }
 
 export function pieceOf(el: HTMLElement): Piece | null {
-	// Registry is the fast path: one WeakMap lookup.
-	const registered = pieceRegistry.get(el);
+	// The remembered piece is the fast path: one property read.
+	const registered = (el as HTMLElement & PieceCarrier)[PIECE];
 	if (registered) {
 		return registered;
 	}
@@ -37,9 +80,7 @@ export function pieceOf(el: HTMLElement): Piece | null {
 		const color = parts[0];
 		const role = parts[1];
 		if ((color === "white" || color === "black") && isRole(role)) {
-			const piece: Piece = { color, role };
-			pieceRegistry.set(el, piece);
-			return piece;
+			return remember(el, { color, role });
 		}
 	}
 
@@ -53,33 +94,43 @@ export function pieceOf(el: HTMLElement): Piece | null {
 	}
 
 	el.dataset.piece = `${colorFromClass}-${roleFromClass}`;
-	const piece: Piece = { color: colorFromClass, role: roleFromClass };
-	pieceRegistry.set(el, piece);
-	return piece;
+	return remember(el, { color: colorFromClass, role: roleFromClass });
 }
 
-function pieceTransform(square: Square, orientation: Color, offset?: Point): string {
-	const point = squareToPoint(square, orientation);
-	const x = point.x + (offset?.x ?? 0);
-	const y = point.y + (offset?.y ?? 0);
-	return `translate(${x * 100}%, ${y * 100}%)`;
-}
-
+// Inlined rather than calling squareToPoint, which returns a fresh {x, y} that
+// is read twice and dropped. This runs once per piece per render, so the object
+// was 32 allocations an update for two numbers.
 export function placePieceEl(el: HTMLElement, square: Square, orientation: Color, offset?: Point): void {
-	setSquareAttr(el, square);
-	setTransform(el, pieceTransform(square, orientation, offset));
+	const file = fileIndex(square);
+	const rank = rankIndex(square);
+	const white = orientation === "white";
+
+	placeSquare(
+		el,
+		square,
+		(white ? file : 7 - file) + (offset?.x ?? 0),
+		(white ? 7 - rank : rank) + (offset?.y ?? 0),
+	);
 }
 
 export function placePieceAtPoint(el: HTMLElement, point: Point): void {
-	setTransform(el, `translate(${(point.x - 0.5) * 100}%, ${(point.y - 0.5) * 100}%)`);
+	// Centred on the pointer rather than on a square, hence the half-square shift.
+	setTranslate(el, point.x - 0.5, point.y - 0.5);
 }
 
 export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, state: BoardState): void {
-	const seen = new Set<Square>();
+	// Survivors are marked on the element with this render's tick rather than
+	// collected into a Set of squares. The Set cost an allocation plus a hashed
+	// insert per piece -- 32 an update whose only reader is a membership test
+	// the tick answers with a number comparison. It also had to be built for
+	// every piece even though the passes below only ever ask about the handful
+	// that did not survive.
+	const tick = ++renderTick;
+	const needed: Square[] = [];
+	let survivors = 0;
 
 	// PASS 1: Survivors. For each piece in state, if the square already has
-	// an element with a matching piece, keep it. Only mark as seen if we kept it.
-	// Skip held elements.
+	// an element with a matching piece, keep it. Skip held elements.
 	for (const [square, piece] of state.pieces) {
 		const existing = els.get(square);
 
@@ -89,34 +140,39 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 		// overwrites the map entry the drag layer looks itself up by, so `held`
 		// never comes off and the stray never leaves. Skip it outright, exactly
 		// as the removal pass below does.
-		if (existing?.classList.contains("held")) {
-			seen.add(square);
+		if (existing && isHeld(existing)) {
+			(existing as HTMLElement & FlagCarrier)[ALIVE] = tick;
+			survivors++;
 			continue;
 		}
 
 		if (existing) {
 			const occupant = pieceOf(existing);
-			if (occupant && occupant.color === piece.color && occupant.role === piece.role) {
+			// Identity first: pieces parsed out of a placement are interned, so
+			// the common case is one pointer comparison rather than two string
+			// ones. The field comparison still has to follow, for elements whose
+			// piece was reconstructed from the DOM by pieceOf's fallback.
+			if (occupant === piece || (occupant && occupant.color === piece.color && occupant.role === piece.role)) {
 				// The survivor keeps its element. Write only what actually differs:
 				// an unconditional write costs a style recalc per piece per render,
 				// which is the whole point of this pass. The comparison is made against
 				// a JS-side record rather than by reading the DOM back. An orientation
 				// flip moves every piece without any of them changing square.
-				setSquareAttr(existing, square);
-				setTransform(existing, pieceTransform(square, state.orientation));
-				seen.add(square);
+				placePieceEl(existing, square, state.orientation);
+				(existing as HTMLElement & FlagCarrier)[ALIVE] = tick;
+				survivors++;
 				continue;
 			}
 		}
 
 		// This square needs a new element (capture, promotion, or first appearance).
-		// Don't handle it here; let the residual pass deal with it.
+		needed.push(square);
 	}
 
-	// Every piece survived in place: `vacated` and `needed` are both provably empty,
-	// so the two residual passes would walk `els` and `state.pieces` again to build
-	// nothing. `seen` is a subset of both key sets, so equal sizes means equal sets.
-	if (seen.size === state.pieces.size && seen.size === els.size) {
+	// Every piece survived in place: `vacated` is provably empty too, so the
+	// residual passes would walk `els` to build nothing. Survivors are distinct
+	// elements of `els`, so an equal count means every entry survived.
+	if (survivors === state.pieces.size && survivors === els.size) {
 		return;
 	}
 
@@ -139,17 +195,14 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 	}
 
 	const vacated: Array<[Square, HTMLElement]> = [];
-	const needed: Square[] = [];
 
 	for (const [square, el] of els) {
-		if (!seen.has(square) && !el.classList.contains("held")) {
+		// The held test stays: a held element can sit on a square the new
+		// position does not list at all, so PASS 1 never reaches it and never
+		// stamps it alive. Without this it reads as vacated and gets removed
+		// out from under the drag.
+		if ((el as HTMLElement & FlagCarrier)[ALIVE] !== tick && !isHeld(el)) {
 			vacated.push([square, el]);
-		}
-	}
-
-	for (const square of state.pieces.keys()) {
-		if (!seen.has(square)) {
-			needed.push(square);
 		}
 	}
 

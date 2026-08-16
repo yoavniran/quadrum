@@ -3,6 +3,12 @@ import type { Color, FileLetter, Point, RankNumber, Square } from "../types";
 export const FILES: readonly FileLetter[] = ["a", "b", "c", "d", "e", "f", "g", "h"];
 export const RANKS: readonly RankNumber[] = ["1", "2", "3", "4", "5", "6", "7", "8"];
 
+// Also the lookup table every square-producing function here reads from, rather
+// than building a fresh two-character string. A position parse yields 32 squares
+// and runs on every update, so the concatenations were the second-largest source
+// of per-update garbage after the piece objects. (The saving is the allocation
+// itself; string equality in JS is by value, so nothing downstream can tell the
+// difference -- which is why there is no test asserting it.)
 export const ALL_SQUARES: readonly Square[] = (() => {
 	const squares: Square[] = [];
 	for (let file = 0; file < 8; file++) {
@@ -19,17 +25,22 @@ export function isSquare(value: unknown): value is Square {
 	return FILES.includes(file as FileLetter) && RANKS.includes(rank as RankNumber);
 }
 
+// charCodeAt rather than FILES.indexOf: both run twice per piece inside
+// squareToPoint, so an ordinary update pays 64 linear array scans through them
+// before a single pixel moves. Out-of-range input was already undefined
+// behaviour here -- indexOf returned -1 and the caller got NaN coordinates --
+// so nothing that was previously well-defined changes.
 export function fileIndex(square: Square): number {
-	return FILES.indexOf(square[0] as FileLetter);
+	return square.charCodeAt(0) - 97; // 'a'
 }
 
 export function rankIndex(square: Square): number {
-	return RANKS.indexOf(square[1] as RankNumber);
+	return square.charCodeAt(1) - 49; // '1'
 }
 
 export function squareAt(file: number, rank: number): Square | null {
 	if (file < 0 || file > 7 || rank < 0 || rank > 7) return null;
-	return `${FILES[file]}${RANKS[rank]}` as Square;
+	return ALL_SQUARES[file * 8 + rank];
 }
 
 export function squareToPoint(square: Square, orientation: Color): Point {
@@ -60,7 +71,7 @@ export function pointToSquare(x: number, y: number, orientation: Color): Square 
 		rank = yf;
 	}
 
-	return `${FILES[file]}${RANKS[rank]}` as Square;
+	return ALL_SQUARES[file * 8 + rank];
 }
 
 export function clientToPoint(clientX: number, clientY: number, rect: DOMRect): Point {

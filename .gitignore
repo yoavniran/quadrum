@@ -9,6 +9,11 @@ test-results/
 dist-e2e/
 reports/
 
+# Ad-hoc A/B and ablation runs. Only baseline.json, baseline-run.json and
+# latest.json are published artefacts; everything else there is scratch.
+apps/bench/results/ab-*.json
+apps/bench/results/ablate-*.json
+
 docs/thrifty/
 
 .env

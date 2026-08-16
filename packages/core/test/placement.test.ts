@@ -1,4 +1,4 @@
-import { setSquareAttr, clearSquareAttr, setTransform } from "../src/view/placement";
+import { setSquareAttr, clearSquareAttr, placeSquare, setTransform, setTranslate } from "../src/view/placement";
 
 describe("placement", () => {
 	it("setSquareAttr writes data-square the first time", () => {
@@ -69,5 +69,102 @@ describe("placement", () => {
 		setSquareAttr(el1, "c3");
 		expect(el1.dataset.square).toBe("c3");
 		expect(el2.dataset.square).toBe("b2");
+	});
+
+	// setTransform and setTranslate write the same property through two different
+	// guards, so each has to invalidate the other's record or one of them will
+	// skip a write the element genuinely needs.
+	describe("setTranslate", () => {
+		it("writes on the first call and elides an identical repeat", () => {
+			const el = document.createElement("qd-piece");
+
+			setTranslate(el, 3, 4);
+			expect(el.style.transform).toBe("translate(300%, 400%)");
+
+			el.style.transform = "";
+			setTranslate(el, 3, 4);
+			// Elided: the record still says (3, 4), so nothing was rewritten.
+			expect(el.style.transform).toBe("");
+		});
+
+		it("writes again when either coordinate changes", () => {
+			const el = document.createElement("qd-piece");
+
+			setTranslate(el, 3, 4);
+			setTranslate(el, 3, 5);
+			expect(el.style.transform).toBe("translate(300%, 500%)");
+		});
+
+		it("is elided by a setTransform that wrote the same translate", () => {
+			const el = document.createElement("qd-piece");
+
+			setTransform(el, "translate(300%, 400%)");
+			el.style.transform = "";
+			setTranslate(el, 3, 4);
+
+			expect(el.style.transform).toBe("translate(300%, 400%)");
+		});
+
+		it("re-writes coordinates that a setTransform has since overwritten", () => {
+			const el = document.createElement("qd-piece");
+
+			setTranslate(el, 3, 4);
+			// The drag layer parks the element somewhere else by string.
+			setTransform(el, "translate(50%, 50%)");
+			// Back to where the numeric record still claimed it was. Without the
+			// invalidation in setTransform this compares equal and the piece stays
+			// stuck at the drag position.
+			setTranslate(el, 3, 4);
+
+			expect(el.style.transform).toBe("translate(300%, 400%)");
+		});
+
+		// placeSquare shares one record between the two writes, so it has to end up
+		// in exactly the state the two separate calls would have left behind --
+		// including each guard staying independent of the other.
+		it("placeSquare writes both the attribute and the translate", () => {
+			const el = document.createElement("qd-piece");
+
+			placeSquare(el, "a1", 3, 4);
+
+			expect(el.dataset.square).toBe("a1");
+			expect(el.style.transform).toBe("translate(300%, 400%)");
+		});
+
+		it("placeSquare guards each write separately", () => {
+			const el = document.createElement("qd-piece");
+			placeSquare(el, "a1", 3, 4);
+
+			el.removeAttribute("data-square");
+			el.style.transform = "";
+			// Same square, moved: only the translate is genuinely new.
+			placeSquare(el, "a1", 3, 5);
+
+			expect(el.dataset.square).toBeUndefined();
+			expect(el.style.transform).toBe("translate(300%, 500%)");
+		});
+
+		it("placeSquare shares its record with the single-purpose writers", () => {
+			const el = document.createElement("qd-piece");
+			placeSquare(el, "a1", 3, 4);
+
+			el.removeAttribute("data-square");
+			el.style.transform = "";
+			setSquareAttr(el, "a1");
+			setTranslate(el, 3, 4);
+
+			expect(el.dataset.square).toBeUndefined();
+			expect(el.style.transform).toBe("");
+		});
+
+		it("elides a setTransform repeating the translate it just wrote", () => {
+			const el = document.createElement("qd-piece");
+
+			setTranslate(el, 3, 4);
+			el.style.transform = "";
+			setTransform(el, "translate(300%, 400%)");
+
+			expect(el.style.transform).toBe("");
+		});
 	});
 });

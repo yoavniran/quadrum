@@ -1,4 +1,4 @@
-import type { Color, Pieces, Role, Square } from "../types";
+import type { Color, Piece, Pieces, Role, Square } from "../types";
 import { ALL_SQUARES, FILES, RANKS } from "./squares";
 
 export const INITIAL_PLACEMENT = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
@@ -11,6 +11,25 @@ const CHAR_TO_ROLE: Record<string, Role> = {
 	q: "queen",
 	k: "king",
 };
+
+// One frozen Piece per FEN character, shared by every position that contains it.
+// An ordinary update re-parses the whole placement, so allocating a fresh
+// {color, role} per occupant cost 32 short-lived objects per update -- 3200 over
+// the benchmark's replay, all of them structurally identical to one of these 12.
+// Interning also makes the survivor test in renderPieces a pointer comparison
+// instead of two string comparisons.
+//
+// Safe only because a Piece is never mutated in place anywhere in the library:
+// promotion and the drag layer both build a new object rather than reassigning
+// .role or .color. freeze() is what keeps that true for consumers as well.
+const INTERNED_PIECES: Readonly<Record<string, Piece>> = Object.freeze(
+	Object.fromEntries(
+		Object.entries(CHAR_TO_ROLE).flatMap(([char, role]) => [
+			[char.toUpperCase(), Object.freeze({ color: "white" as Color, role })],
+			[char, Object.freeze({ color: "black" as Color, role })],
+		]),
+	),
+);
 
 /** Not `role[0]` — king and knight would collide on "k". */
 const ROLE_TO_CHAR: Record<Role, string> = {
@@ -37,25 +56,36 @@ export function fenToPieces(fen: string): Pieces {
 		const actualRank = 7 - rankIdx;
 		let fileIdx = 0;
 
-		for (const char of rankStr) {
-			if (char === "~") {
+		// Indexed charCode walk rather than for..of with a regex test. The old form
+		// ran `/\d/.test()` plus up to three case conversions per character, which
+		// is ~160 calls for a full placement -- paid again on every update, since
+		// every update re-parses.
+		for (let i = 0; i < rankStr.length; i++) {
+			const code = rankStr.charCodeAt(i);
+
+			// "~" marks a promoted piece in crazyhouse placements; it annotates the
+			// character before it and occupies no file.
+			if (code === 126) {
 				continue;
 			}
 
-			if (/\d/.test(char)) {
-				fileIdx += parseInt(char, 10);
-			} else if (CHAR_TO_ROLE[char.toLowerCase()]) {
-				if (fileIdx > 7) {
-					throw Error("quadrum: rank has more than 8 files");
-				}
-				const color: Color = char === char.toUpperCase() ? "white" : "black";
-				const role = CHAR_TO_ROLE[char.toLowerCase()];
-				const square = `${FILES[fileIdx]}${RANKS[actualRank]}` as Square;
-				pieces.set(square, { color, role });
-				fileIdx++;
-			} else {
-				throw Error(`quadrum: unknown character in placement: ${char}`);
+			if (code >= 48 && code <= 57) {
+				fileIdx += code - 48;
+				continue;
 			}
+
+			const piece = INTERNED_PIECES[rankStr[i]];
+
+			if (!piece) {
+				throw Error(`quadrum: unknown character in placement: ${rankStr[i]}`);
+			}
+
+			if (fileIdx > 7) {
+				throw Error("quadrum: rank has more than 8 files");
+			}
+
+			pieces.set(ALL_SQUARES[fileIdx * 8 + actualRank], piece);
+			fileIdx++;
 		}
 
 		if (fileIdx !== 8) {

@@ -77,8 +77,8 @@ export function renderSquares(
 		classes.set(deco.hover, c);
 	}
 
-	// Release elements for squares no longer decorated.
-	// Collect stale squares first to avoid mutating the map during iteration.
+	// Squares that lost their decoration, and squares that gained one.
+	// Collected first, because both loops below rewrite `els`.
 	const staleSquares: Square[] = [];
 	for (const sq of els.keys()) {
 		if (!classes.has(sq)) {
@@ -86,11 +86,38 @@ export function renderSquares(
 		}
 	}
 
+	const freshSquares: Square[] = [];
+	for (const sq of classes.keys()) {
+		if (!els.has(sq)) {
+			freshSquares.push(sq);
+		}
+	}
+
+	// Hand a stale element straight to a square that needs one, rather than
+	// routing it through the pool.
+	//
+	// Every position update moves the last-move highlight, so the steady state
+	// is exactly this: two elements go stale and two are needed, and they are
+	// interchangeable. Releasing them first meant clearing the attribute,
+	// blanking the class list and hiding the element, only for the acquire to
+	// unhide it and write back a class list that was usually identical -- six
+	// DOM writes an element where two are needed, on the hottest path the
+	// library has. `hidden` in particular is an attribute mutation, so the
+	// hide/unhide pair invalidated style for an element that never stopped
+	// being visible.
+	const reused = Math.min(staleSquares.length, freshSquares.length);
+
+	for (let i = 0; i < reused; i++) {
+		const el = els.get(staleSquares[i])!;
+		els.delete(staleSquares[i]);
+		els.set(freshSquares[i], el);
+	}
+
 	// Idle pooled element must NOT carry a data-square attribute; the e2e suite
 	// asserts an undecorated square has zero matching elements.
-	for (const sq of staleSquares) {
-		const el = els.get(sq)!;
-		els.delete(sq);
+	for (let i = reused; i < staleSquares.length; i++) {
+		const el = els.get(staleSquares[i])!;
+		els.delete(staleSquares[i]);
 		clearSquareAttr(el);
 		el.className = "";
 		el.hidden = true;
@@ -100,23 +127,20 @@ export function renderSquares(
 		}
 	}
 
-	// Acquire or create elements for newly decorated squares.
-	// Release runs before acquire so a square that just lost its decoration is
-	// immediately reusable by one that just gained it — the steady state of a
-	// move then allocates nothing.
-	for (const [sq, classList] of classes) {
-		let el: HTMLElement | undefined = els.get(sq);
+	for (let i = reused; i < freshSquares.length; i++) {
+		// A pooled element is still a child of the board — re-appending it
+		// would re-insert it, which is the structural mutation this pool
+		// exists to avoid.
+		let el = pool.acquire();
 		if (!el) {
-			// A pooled element is still a child of the board — re-appending it
-			// would re-insert it, which is the structural mutation this pool
-			// exists to avoid.
-			el = pool.acquire() ?? undefined;
-			if (!el) {
-				el = document.createElement("qd-square");
-				board.appendChild(el);
-			}
-			els.set(sq, el);
+			el = document.createElement("qd-square");
+			board.appendChild(el);
 		}
+		els.set(freshSquares[i], el);
+	}
+
+	for (const [sq, classList] of classes) {
+		const el = els.get(sq)!;
 		if (el.hidden) {
 			el.hidden = false;
 		}

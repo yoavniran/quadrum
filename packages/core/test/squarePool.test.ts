@@ -69,6 +69,39 @@ describe("renderSquares pooling", () => {
 		expect(ctx.board.querySelectorAll("qd-square").length).toBe(3);
 	});
 
+	// A stale element is handed straight to a square that needs one. Routing it
+	// through the pool instead would hide it, blank its class list and strip its
+	// attribute, then immediately undo all three -- and every position update
+	// moves the last-move highlight, so that churn was paid on the hottest path
+	// in the library.
+	it("hands a stale element to a fresh square without hiding it", () => {
+		const ctx = setup();
+		render(ctx, { selected: "e2" });
+		const el = ctx.els.get("e2")!;
+
+		const touched: string[] = [];
+		const observer = new MutationObserver((records) => {
+			for (const record of records) {
+				if (record.attributeName) touched.push(record.attributeName);
+			}
+		});
+		observer.observe(el, { attributes: true });
+
+		render(ctx, { selected: "d4" });
+		// Deliver synchronously — jsdom queues mutation records as microtasks.
+		for (const record of observer.takeRecords()) {
+			if (record.attributeName) touched.push(record.attributeName);
+		}
+		observer.disconnect();
+
+		expect(ctx.els.get("d4")).toBe(el);
+		expect(touched).not.toContain("hidden");
+		// The class list is identical on both squares, so it must not be rewritten
+		// either -- the blank-then-restore was two writes for no change.
+		expect(touched).not.toContain("class");
+		expect(el.className).toBe("active");
+	});
+
 	it("class lists land correctly after element recycle", () => {
 		const ctx = setup();
 		render(ctx, { selected: "e2" });

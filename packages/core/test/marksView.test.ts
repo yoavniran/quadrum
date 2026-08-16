@@ -247,30 +247,24 @@ describe("renderMarks", () => {
 			});
 			render(dom, state1);
 
-			expect(defs.querySelectorAll("linearGradient").length).toBe(1);
+			const minted = Array.from(defs.querySelectorAll("linearGradient"));
+			expect(minted.length).toBe(1);
 
-			// The first move has nothing parked to draw on yet, so it mints a second
-			// element; the one it displaced is parked in place rather than detached.
-			const state2 = applyOptions(defaultState(), {
-				marks: { enabled: true, auto: [{ from: "e2", to: "e5", pen: "red" }], user: [] },
-			});
-			render(dom, state2);
-
-			const afterMove = Array.from(defs.querySelectorAll("linearGradient"));
-			expect(afterMove.length).toBe(2);
-
-			// Every move after that is the steady state this pool exists for: the parked
-			// element is re-acquired and rewritten, so nothing new is created no matter
-			// how many times the arrow moves.
-			for (const to of ["e6", "e7", "e8", "e5", "e3"] as const) {
+			// Moving the arrow retires one mark key and creates another, but the shed
+			// shaft is handed straight to the new mark rather than parked and
+			// re-acquired. The shaft therefore keeps its identity across the move, and
+			// gradients are owned by their shaft, so the very same element is
+			// re-pointed at the new segment. No second element is ever minted, however
+			// many times the arrow moves.
+			for (const to of ["e5", "e6", "e7", "e8", "e5", "e3"] as const) {
 				const next = applyOptions(defaultState(), {
 					marks: { enabled: true, auto: [{ from: "e2", to, pen: "red" }], user: [] },
 				});
 				render(dom, next);
 
 				const settled = Array.from(defs.querySelectorAll("linearGradient"));
-				expect(settled.length).toBe(2);
-				expect(settled.every((g) => afterMove.includes(g))).toBe(true);
+				expect(settled.length).toBe(1);
+				expect(settled[0]).toBe(minted[0]);
 			}
 		});
 
@@ -712,6 +706,61 @@ describe("renderMarks", () => {
 			expect(shaftsAfter[1]).toBe(shafts[1]);
 			expect(shaftsAfter[0]?.getAttribute("data-pen")).toBe("blue");
 			expect(shaftsAfter[1]?.getAttribute("data-pen")).toBe("green");
+		});
+	});
+
+	describe("retention under churn", () => {
+		const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
+
+		/** An engine tick: every key differs from the previous render's, which is the
+		 *  case the node handoff and the owner-keyed gradients are built for. */
+		function tick(i: number): BoardState {
+			const marks = [
+				{ from: `${FILES[i % 8]}2`, to: `${FILES[(i + 1) % 8]}4`, pen: "green" },
+				{ from: `${FILES[(i + 2) % 8]}7`, to: `${FILES[(i + 3) % 8]}5`, pen: "blue" },
+				{ from: `${FILES[(i + 4) % 8]}3` },
+			];
+			return applyOptions(defaultState(), {
+				marks: { enabled: true, auto: marks as any, user: [] },
+			});
+		}
+
+		function census(): number {
+			return container.querySelectorAll("*").length;
+		}
+
+		it("holds a flat node census across hundreds of engine ticks", () => {
+			const dom = buildDom(container);
+
+			// Let the pools reach steady state before sampling.
+			for (let i = 0; i < 20; i++) {
+				render(dom, tick(i));
+			}
+			const settled = census();
+
+			for (let i = 20; i < 400; i++) {
+				render(dom, tick(i));
+			}
+
+			// Nothing accumulates: retired nodes are either handed to the mark being
+			// painted, parked in a capacity-capped pool, or removed outright.
+			expect(census()).toBe(settled);
+		});
+
+		it("keeps gradients bounded by the pool capacity when every arrow retires", () => {
+			const dom = buildDom(container);
+
+			for (let i = 0; i < 200; i++) {
+				render(dom, tick(i));
+			}
+
+			// Drop to no marks at all. Every owner goes unreferenced in one sweep, so
+			// this is the worst case for the parked pool.
+			render(dom, applyOptions(defaultState(), { marks: { enabled: true, auto: [], user: [] } }));
+
+			// `defs` is minted lazily by the first gradient, so it only exists now.
+			const defs = container.querySelector("defs")!;
+			expect(defs.querySelectorAll("linearGradient").length).toBeLessThanOrEqual(GRADIENT_POOL_CAPACITY);
 		});
 	});
 });

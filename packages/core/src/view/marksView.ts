@@ -4,6 +4,7 @@ import type { BoardDom } from "./layout";
 import type { MarkNodeKind, MarkPools } from "./markPool";
 import type { GradientRegistry } from "./markGradients";
 import { squareToPoint } from "../model/squares";
+import { setAttr, removeAttr, forgetAttrs } from "./svgAttrs";
 import { createMarkPools } from "./markPool";
 import { createGradientRegistry } from "./markGradients";
 
@@ -11,24 +12,6 @@ import { createGradientRegistry } from "./markGradients";
  *  keeps the emitted markup readable and diffable. */
 function round(n: number): number {
 	return Math.round(n * 100) / 100;
-}
-
-/** Writes an attribute only when the value actually differs. A `setAttribute`
- *  call is a DOM write even when the value is unchanged, and the mutate paths
- *  below exist specifically so that a render whose inputs didn't move for a
- *  given mark costs nothing. */
-function setAttributeIfChanged(el: SVGElement, name: string, value: string): void {
-	if (el.getAttribute(name) !== value) {
-		el.setAttribute(name, value);
-	}
-}
-
-/** Removes an attribute only if it is present, for the same reason as
- *  `setAttributeIfChanged`. */
-function removeAttributeIfPresent(el: SVGElement, name: string): void {
-	if (el.hasAttribute(name)) {
-		el.removeAttribute(name);
-	}
 }
 
 /** Assigns a unique board sequence number on creation, so that gradient ids stay
@@ -61,7 +44,7 @@ interface RenderedMark {
  *  cache dies with the board and the module stays stateless from the caller's view. */
 interface MarksCache {
 	drewSomething: boolean;
-	// Owns every fade gradient: minting, content-keyed reuse, and the post-render
+	// Owns every fade gradient: minting, owner-keyed reuse, and the post-render
 	// sweep that parks the ones this render stopped referencing.
 	gradients: GradientRegistry;
 	// Nodes shed by the diff are parked here instead of destroyed, so a render
@@ -91,6 +74,17 @@ function getCache(dom: BoardDom): MarksCache {
 /** Parks every node a retired mark owned, so the next mark that needs one of the
  *  same shape mutates it instead of creating one. A full pool hands the node back
  *  for disposal, which is the only path that still touches the tree. */
+const MARK_NODE_KINDS = ["shaft", "head", "circle", "badge"] as const;
+
+function retireNode(cache: MarksCache, kind: MarkNodeKind, node: SVGElement): void {
+	// The mirror must be forgotten before handing the node to the pool, which
+	// strips attributes with raw DOM calls.
+	forgetAttrs(node);
+	if (!cache.pools.release(kind, node)) {
+		node.remove();
+	}
+}
+
 function retire(cache: MarksCache, rendered: RenderedMark): void {
 	const parts: [MarkNodeKind, SVGElement | undefined][] = [
 		["shaft", rendered.shaft],
@@ -99,17 +93,44 @@ function retire(cache: MarksCache, rendered: RenderedMark): void {
 		["badge", rendered.badge],
 	];
 	for (const [kind, node] of parts) {
-		if (node && !cache.pools.release(kind, node)) {
-			node.remove();
+		if (node) {
+			retireNode(cache, kind, node);
 		}
+	}
+}
+
+/** Offers the nodes of a mark that is retiring in *this* render to the marks
+ *  still to be painted, instead of parking them. Parking strips five stamps and
+ *  writes `display="none"`, and acquiring undoes both -- all of it immediately
+ *  overwritten by the repaint. On an engine tick every key changes, so without
+ *  this every node pays that round trip on every tick for nothing. */
+function shed(spare: Record<MarkNodeKind, SVGElement[]>, rendered: RenderedMark): void {
+	if (rendered.shaft) {
+		spare.shaft.push(rendered.shaft);
+	}
+	if (rendered.head) {
+		spare.head.push(rendered.head);
+	}
+	if (rendered.circle) {
+		spare.circle.push(rendered.circle);
+	}
+	if (rendered.badge) {
+		spare.badge.push(rendered.badge);
 	}
 }
 
 /** An idle node of the given shape, or a fresh one. A recycled node arrives with
  *  its stamps stripped and every other attribute stale, so callers must write the
  *  full attribute set -- which is why the paint helpers below are shared by the
- *  create and the mutate path rather than being duplicated. */
-function take(cache: MarksCache, kind: MarkNodeKind, tag: string, layer: SVGSVGElement): SVGElement {
+ *  create and the mutate path rather than being duplicated. A handed-over node
+ *  from the spare lists arrives with its stamps intact and its mirror describing
+ *  its current state, which is safe because the paint helpers write the complete
+ *  attribute set. */
+function take(cache: MarksCache, spare: Record<MarkNodeKind, SVGElement[]>, kind: MarkNodeKind, tag: string, layer: SVGSVGElement): SVGElement {
+	const handed = spare[kind].pop();
+	if (handed) {
+		return handed;
+	}
 	const pooled = cache.pools.acquire(kind);
 	if (pooled) {
 		return pooled;
@@ -174,9 +195,8 @@ export function resolvePen(state: BoardState, mark: Mark): Pen {
  * `data-mark-part` instead, and is found with `[data-mark-part="head"]`. Styling
  * a whole arrow therefore means selecting both.
  *
- * Every write goes through `setAttributeIfChanged`/`removeAttributeIfPresent` so
- * this is safe to call from a mutate path too: a surviving node whose stamp
- * hasn't moved costs nothing.
+ * Every write goes through `setAttr`/`removeAttr` so this is safe to call from
+ * a mutate path too: a surviving node whose stamp hasn't moved costs nothing.
  */
 function describeMark(
 	el: SVGElement,
@@ -186,22 +206,22 @@ function describeMark(
 	part?: "shaft" | "head",
 ): void {
 	if (kind) {
-		setAttributeIfChanged(el, "data-mark", kind);
+		setAttr(el, "data-mark", kind);
 	} else {
-		removeAttributeIfPresent(el, "data-mark");
+		removeAttr(el, "data-mark");
 	}
 	if (part) {
-		setAttributeIfChanged(el, "data-mark-part", part);
+		setAttr(el, "data-mark-part", part);
 	} else {
-		removeAttributeIfPresent(el, "data-mark-part");
+		removeAttr(el, "data-mark-part");
 	}
-	setAttributeIfChanged(el, "data-from", mark.from);
+	setAttr(el, "data-from", mark.from);
 	if (mark.to) {
-		setAttributeIfChanged(el, "data-to", mark.to);
+		setAttr(el, "data-to", mark.to);
 	} else {
-		removeAttributeIfPresent(el, "data-to");
+		removeAttr(el, "data-to");
 	}
-	setAttributeIfChanged(el, "data-pen", penKey);
+	setAttr(el, "data-pen", penKey);
 }
 
 /**
@@ -215,12 +235,13 @@ function describeMark(
  * same 800x800 space as the marks themselves, so the segment can be given in
  * board units.
  *
- * Gradients are cached by content (pen and coordinates), so identical geometry
- * across renders reuses the same element and the same fill URL -- and a miss
- * recycles a parked element rather than creating one.
+ * Gradients are owned by the shaft element that paints them, so identical
+ * geometry across renders reuses the same element and mutates its coordinates
+ * in place rather than minting a new gradient.
  */
 function fadeToOpaque(
 	dom: BoardDom,
+	shaft: SVGElement,
 	pen: Pen,
 	segment: { x1: number; y1: number; x2: number; y2: number },
 ): string | null {
@@ -230,7 +251,7 @@ function fadeToOpaque(
 		return null;
 	}
 
-	return getCache(dom).gradients.fill(defs, pen.color, pen.opacity, segment);
+	return getCache(dom).gradients.fill(defs, shaft, pen.color, pen.opacity, segment);
 }
 
 /** The shaft points, head points and (optional) fade for an arrow, computed once
@@ -243,7 +264,11 @@ interface ArrowGeometry {
 	fade: string | null;
 }
 
-function computeArrowGeometry(dom: BoardDom, mark: Mark, pen: Pen, orientation: Color): ArrowGeometry {
+function pt(x: number, y: number): string {
+	return `${round(x)},${round(y)}`;
+}
+
+function computeArrowGeometry(dom: BoardDom, shaft: SVGElement, mark: Mark, pen: Pen, orientation: Color): ArrowGeometry {
 	const fromPoint = squareToPoint(mark.from, orientation);
 	const fromCenter = { x: fromPoint.x * 100 + 50, y: fromPoint.y * 100 + 50 };
 	const toPoint = squareToPoint(mark.to!, orientation);
@@ -275,27 +300,23 @@ function computeArrowGeometry(dom: BoardDom, mark: Mark, pen: Pen, orientation: 
 	const lapX = overX + ux * SEAM;
 	const lapY = overY + uy * SEAM;
 
-	const shaftPts = [
-		[baseX + nx * half, baseY + ny * half],
-		[lapX + nx * half, lapY + ny * half],
-		[lapX - nx * half, lapY - ny * half],
-		[baseX - nx * half, baseY - ny * half],
-	];
+	const shaftPoints = pt(baseX + nx * half, baseY + ny * half) + " " +
+		pt(lapX + nx * half, lapY + ny * half) + " " +
+		pt(lapX - nx * half, lapY - ny * half) + " " +
+		pt(baseX - nx * half, baseY - ny * half);
 
-	const headPts = [
-		[overX + nx * half, overY + ny * half],
-		[neckX + nx * half, neckY + ny * half],
-		[neckX + nx * headHalf, neckY + ny * headHalf],
-		[toCenter.x, toCenter.y],
-		[neckX - nx * headHalf, neckY - ny * headHalf],
-		[neckX - nx * half, neckY - ny * half],
-		[overX - nx * half, overY - ny * half],
-	];
+	const headPoints = pt(overX + nx * half, overY + ny * half) + " " +
+		pt(neckX + nx * half, neckY + ny * half) + " " +
+		pt(neckX + nx * headHalf, neckY + ny * headHalf) + " " +
+		pt(toCenter.x, toCenter.y) + " " +
+		pt(neckX - nx * headHalf, neckY - ny * headHalf) + " " +
+		pt(neckX - nx * half, neckY - ny * half) + " " +
+		pt(overX - nx * half, overY - ny * half);
 
 	const fadeLength = Math.min(70, Math.max(0, dist - overLength) * 0.6);
 	const fade =
 		pen.opacity < 1 && fadeLength > 0
-			? fadeToOpaque(dom, pen, {
+			? fadeToOpaque(dom, shaft, pen, {
 					x1: overX - ux * fadeLength,
 					y1: overY - uy * fadeLength,
 					x2: overX,
@@ -304,8 +325,8 @@ function computeArrowGeometry(dom: BoardDom, mark: Mark, pen: Pen, orientation: 
 			: null;
 
 	return {
-		shaftPoints: shaftPts.map(([x, y]) => `${round(x!)},${round(y!)}`).join(" "),
-		headPoints: headPts.map(([x, y]) => `${round(x!)},${round(y!)}`).join(" "),
+		shaftPoints,
+		headPoints,
 		fade,
 	};
 }
@@ -323,22 +344,22 @@ function paintArrow(
 	pen: Pen,
 	penKey: string,
 ): void {
-	setAttributeIfChanged(shaft, "points", geo.shaftPoints);
-	setAttributeIfChanged(shaft, "fill", geo.fade ?? pen.color);
+	setAttr(shaft, "points", geo.shaftPoints);
+	setAttr(shaft, "fill", geo.fade ?? pen.color);
 	if (geo.fade) {
 		// The gradient carries the pen's alpha in its stops, so an element opacity
 		// would scale it a second time. A recycled node may still hold one.
-		removeAttributeIfPresent(shaft, "opacity");
+		removeAttr(shaft, "opacity");
 	} else {
-		setAttributeIfChanged(shaft, "opacity", String(pen.opacity));
+		setAttr(shaft, "opacity", String(pen.opacity));
 	}
-	setAttributeIfChanged(shaft, "stroke-linejoin", "round");
+	setAttr(shaft, "stroke-linejoin", "round");
 	describeMark(shaft, "arrow", mark, penKey, "shaft");
 
-	setAttributeIfChanged(head, "points", geo.headPoints);
-	setAttributeIfChanged(head, "fill", pen.color);
-	setAttributeIfChanged(head, "opacity", "1");
-	setAttributeIfChanged(head, "stroke-linejoin", "round");
+	setAttr(head, "points", geo.headPoints);
+	setAttr(head, "fill", pen.color);
+	setAttr(head, "opacity", "1");
+	setAttr(head, "stroke-linejoin", "round");
 	describeMark(head, null, mark, penKey, "head");
 }
 
@@ -347,13 +368,13 @@ function paintCircle(circle: SVGElement, mark: Mark, pen: Pen, orientation: Colo
 	const fromPoint = squareToPoint(mark.from, orientation);
 	const width = mark.width ?? pen.width;
 
-	setAttributeIfChanged(circle, "cx", String(fromPoint.x * 100 + 50));
-	setAttributeIfChanged(circle, "cy", String(fromPoint.y * 100 + 50));
-	setAttributeIfChanged(circle, "r", String(50 - width / 2));
-	setAttributeIfChanged(circle, "fill", "none");
-	setAttributeIfChanged(circle, "stroke", pen.color);
-	setAttributeIfChanged(circle, "stroke-width", String(width));
-	setAttributeIfChanged(circle, "opacity", String(pen.opacity));
+	setAttr(circle, "cx", String(fromPoint.x * 100 + 50));
+	setAttr(circle, "cy", String(fromPoint.y * 100 + 50));
+	setAttr(circle, "r", String(50 - width / 2));
+	setAttr(circle, "fill", "none");
+	setAttr(circle, "stroke", pen.color);
+	setAttr(circle, "stroke-width", String(width));
+	setAttr(circle, "opacity", String(pen.opacity));
 	describeMark(circle, "circle", mark, penKey);
 }
 
@@ -361,7 +382,7 @@ function paintCircle(circle: SVGElement, mark: Mark, pen: Pen, orientation: Colo
  *  actually changed -- it is the one thing here that costs a parse. */
 function paintBadge(badge: SVGElement, mark: Mark, orientation: Color, penKey: string, svgChanged: boolean): void {
 	const fromPoint = squareToPoint(mark.from, orientation);
-	setAttributeIfChanged(badge, "transform", `translate(${fromPoint.x * 100}, ${fromPoint.y * 100})`);
+	setAttr(badge, "transform", `translate(${fromPoint.x * 100}, ${fromPoint.y * 100})`);
 	if (svgChanged) {
 		badge.innerHTML = mark.svg ?? "";
 	}
@@ -462,7 +483,23 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 		...Array.from(auto.values(), (mark) => ({ mark, source: "auto" as const })),
 		...Array.from(user.values(), (mark) => ({ mark, source: "user" as const })),
 	];
+
+	// Build the set of desired keys before the paint loop, so nodes shed by
+	// retiring marks are available for direct handoff.
 	const desiredKeys = new Set<string>();
+	for (const { mark, source } of desiredMarks) {
+		desiredKeys.add(`${source}:${markKey(mark)}`);
+	}
+
+	// Spare lists for direct node handoff within this render. Marks whose keys are
+	// gone shed their nodes here *before* the paint loop rather than being retired
+	// after it, so a mark that needs a node of the same shape takes one directly.
+	const spare: Record<MarkNodeKind, SVGElement[]> = { shaft: [], head: [], circle: [], badge: [] };
+	for (const [key, rendered] of cache.renderedMarks) {
+		if (!desiredKeys.has(key)) {
+			shed(spare, rendered);
+		}
+	}
 
 	// Build a new list of rendered marks by diffing against the existing ones.
 	const newRenderedMarks = new Map<string, RenderedMark>();
@@ -475,7 +512,6 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 
 	for (const { mark, source } of desiredMarks) {
 		const key = `${source}:${markKey(mark)}`;
-		desiredKeys.add(key);
 		const pen = resolvePen(state, mark);
 		const penKey = mark.pen ?? "green";
 
@@ -502,39 +538,43 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 			// shaft still points at has not been marked as referenced -- and the
 			// post-render sweep would park it out from under a live arrow.
 			if (kind === "arrow" && pen.opacity < 1 && rendered.shaft) {
-				cache.gradients.retainFill(rendered.shaft.getAttribute("fill"));
+				cache.gradients.retain(rendered.shaft);
 			}
 		} else {
 			// Something changed. Retire whatever the previous render left that this
 			// one cannot reuse, then paint -- onto the surviving node where the kind
-			// still matches, onto a parked one otherwise, and onto a fresh element
-			// only when the pool is empty.
+			// still matches, onto a handed-over node from the spare lists, onto a
+			// parked one otherwise, and onto a fresh element only when the pool is
+			// empty.
 			if (kind === "arrow") {
 				const keep = rendered?.kind === "arrow" && rendered.shaft && rendered.head;
 				if (rendered && !keep) {
 					retire(cache, rendered);
 				}
-				shaft = keep ? rendered!.shaft! : take(cache, "shaft", "polygon", dom.marks);
-				head = keep ? rendered!.head! : take(cache, "head", "polygon", dom.heads);
+				shaft = keep ? rendered!.shaft! : take(cache, spare, "shaft", "polygon", dom.marks);
+				head = keep ? rendered!.head! : take(cache, spare, "head", "polygon", dom.heads);
 				// Geometry is computed after the nodes are settled because it is what
 				// registers the fade gradient, and registering one for an arrow we
 				// then failed to draw would leave a gradient nothing references.
-				paintArrow(shaft, head, computeArrowGeometry(dom, mark, pen, state.orientation), mark, pen, penKey);
+				paintArrow(shaft, head, computeArrowGeometry(dom, shaft, mark, pen, state.orientation), mark, pen, penKey);
 			} else if (kind === "circle") {
 				const keep = rendered?.kind === "circle" && rendered.circle;
 				if (rendered && !keep) {
 					retire(cache, rendered);
 				}
-				circle = keep ? rendered!.circle! : take(cache, "circle", "circle", dom.marks);
+				circle = keep ? rendered!.circle! : take(cache, spare, "circle", "circle", dom.marks);
 				paintCircle(circle, mark, pen, state.orientation, penKey);
 			} else {
 				const keep = rendered?.kind === "badge" && rendered.badge;
 				if (rendered && !keep) {
 					retire(cache, rendered);
 				}
-				badge = keep ? rendered!.badge! : take(cache, "badge", "g", dom.badges);
+				badge = keep ? rendered!.badge! : take(cache, spare, "badge", "g", dom.badges);
 				// A recycled or newly created node holds no markup, so the payload has
 				// to be written; a surviving one only when the payload itself moved.
+				// A handed-over node still holds the previous mark's markup, so this
+				// expression correctly yields true whenever the node was not the
+				// surviving one.
 				paintBadge(badge, mark, state.orientation, penKey, !keep || rendered!.svg !== mark.svg);
 			}
 		}
@@ -560,10 +600,12 @@ export function renderMarks(dom: BoardDom, state: BoardState, current: Mark | nu
 		});
 	}
 
-	// Retire marks whose keys are no longer in the desired set.
-	for (const [key, rendered] of cache.renderedMarks) {
-		if (!desiredKeys.has(key)) {
-			retire(cache, rendered);
+	// Park whatever the handoff didn't claim. The retiring marks' nodes were shed
+	// into `spare` before the paint loop, so anything still sitting there is a node
+	// nobody needed this render.
+	for (const kind of MARK_NODE_KINDS) {
+		for (const node of spare[kind]) {
+			retireNode(cache, kind, node);
 		}
 	}
 

@@ -1,4 +1,4 @@
-import { createNodePool } from "./nodePool";
+import { setAttr, forgetAttrs } from "./svgAttrs";
 
 export const GRADIENT_POOL_CAPACITY = 8;
 
@@ -9,11 +9,25 @@ export interface GradientSegment {
 	y2: number;
 }
 
+interface Entry {
+	gradient: SVGElement;
+	fill: string;
+	stop0: SVGElement;
+	stop1: SVGElement;
+	color: string;
+	opacity: number;
+	x1: number;
+	y1: number;
+	x2: number;
+	y2: number;
+}
+
 export interface GradientRegistry {
-	/** `url(#id)` for a gradient ramping `color` from `opacity` to 1 along `segment`. */
-	fill(defs: SVGElement, color: string, opacity: number, segment: GradientSegment): string;
-	/** Re-marks the gradient behind an existing `fill` value as still in use. */
-	retainFill(fill: string | null): void;
+	/** `url(#id)` for a gradient ramping `color` from `opacity` to 1 along `segment`,
+	 *  owned by `owner` — the shaft element it paints. */
+	fill(defs: SVGElement, owner: SVGElement, color: string, opacity: number, segment: GradientSegment): string;
+	/** Re-marks the gradient owned by `owner` as still in use this render. */
+	retain(owner: SVGElement): void;
 	/** Ends a render: every gradient not referenced since the last sweep is parked. */
 	sweep(): void;
 	/** Drops every gradient, parked or live, and removes it from the DOM. */
@@ -21,151 +35,198 @@ export interface GradientRegistry {
 }
 
 export function createGradientRegistry(boardSeq: number): GradientRegistry {
-	// Cache: content key -> gradient element
-	const cache = new Map<string, SVGElement>();
-	// Reverse mapping: gradient id -> content key, for O(1) lookup in retainFill
-	const idToKey = new Map<string, string>();
-	// Referenced keys in the current render
-	let referencedKeys = new Set<string>();
+	// Gradients owned by shaft elements
+	const byOwner = new Map<SVGElement, Entry>();
+	// Referenced owners in the current render
+	let referenced = new Set<SVGElement>();
 	// Monotonic counter for minting gradient ids
 	let nextIndex = 0;
-	// Pool of parked gradients
-	const gradientPool = createNodePool<SVGElement>(GRADIENT_POOL_CAPACITY);
+	// Parked gradients available for reuse, stored as Entry objects
+	const parked: Entry[] = [];
 
 	function round(n: number): number {
 		return Math.round(n * 100) / 100;
 	}
 
-	function setAttributeIfChanged(el: SVGElement, name: string, value: string): void {
-		if (el.getAttribute(name) !== value) {
-			el.setAttribute(name, value);
-		}
-	}
-
 	return {
-		fill(defs: SVGElement, color: string, opacity: number, segment: GradientSegment): string {
-			// Round coordinates and build cache key
+		fill(defs: SVGElement, owner: SVGElement, color: string, opacity: number, segment: GradientSegment): string {
+			// Round coordinates
 			const x1 = round(segment.x1);
 			const y1 = round(segment.y1);
 			const x2 = round(segment.x2);
 			const y2 = round(segment.y2);
-			const cacheKey = `${color}|${opacity}|${x1},${y1},${x2},${y2}`;
 
-			// Mark as referenced in current render
-			referencedKeys.add(cacheKey);
+			// Mark owner as referenced in current render
+			referenced.add(owner);
 
-			// Check cache hit
-			const existing = cache.get(cacheKey);
-			if (existing && existing.parentNode === defs) {
-				return `url(#${existing.id})`;
+			// Look for existing entry
+			const existing = byOwner.get(owner);
+			if (existing && existing.gradient.parentNode === defs) {
+				// Entry exists and its gradient is still in defs, rewrite what changed
+				if (existing.color !== color) {
+					setAttr(existing.stop0, "stop-color", color);
+					setAttr(existing.stop1, "stop-color", color);
+					existing.color = color;
+				}
+				if (existing.opacity !== opacity) {
+					setAttr(existing.stop0, "stop-opacity", String(opacity));
+					existing.opacity = opacity;
+				}
+				if (existing.x1 !== x1) {
+					setAttr(existing.gradient, "x1", String(x1));
+					existing.x1 = x1;
+				}
+				if (existing.y1 !== y1) {
+					setAttr(existing.gradient, "y1", String(y1));
+					existing.y1 = y1;
+				}
+				if (existing.x2 !== x2) {
+					setAttr(existing.gradient, "x2", String(x2));
+					existing.x2 = x2;
+				}
+				if (existing.y2 !== y2) {
+					setAttr(existing.gradient, "y2", String(y2));
+					existing.y2 = y2;
+				}
+				return existing.fill;
 			}
 
-			// Miss: acquire or create a new gradient element
-			let gradient = gradientPool.acquire();
+			// Miss: acquire or create a new gradient
+			let entry: Entry;
+			let isNew = false;
 
-			if (!gradient) {
-				gradient = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
+			if (parked.length > 0) {
+				entry = parked.pop()!;
+				const gradient = entry.gradient;
+				if (gradient.parentNode !== defs) {
+					defs.appendChild(gradient);
+				}
+			} else {
+				// Create a new gradient element
+				const gradient = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
 				const id = `qd-fade-${boardSeq}-${nextIndex++}`;
 				gradient.setAttribute("id", id);
 				gradient.setAttribute("gradientUnits", "userSpaceOnUse");
 				defs.appendChild(gradient);
-			} else if (gradient.parentNode !== defs) {
-				// Recycled gradient was removed from defs, append it back
-				defs.appendChild(gradient);
-			}
 
-			const id = gradient.getAttribute("id")!;
-
-			// Write coordinates with change detection
-			setAttributeIfChanged(gradient, "x1", String(x1));
-			setAttributeIfChanged(gradient, "y1", String(y1));
-			setAttributeIfChanged(gradient, "x2", String(x2));
-			setAttributeIfChanged(gradient, "y2", String(y2));
-
-			// Ensure exactly two stops
-			const stops = gradient.querySelectorAll("stop");
-			if (stops.length === 0) {
-				// Create both stops
+				// Create stops
 				const stop0 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
 				stop0.setAttribute("offset", "0");
-				stop0.setAttribute("stop-color", color);
-				stop0.setAttribute("stop-opacity", String(opacity));
 				gradient.appendChild(stop0);
 
 				const stop1 = document.createElementNS("http://www.w3.org/2000/svg", "stop");
 				stop1.setAttribute("offset", "1");
-				stop1.setAttribute("stop-color", color);
-				stop1.setAttribute("stop-opacity", "1");
 				gradient.appendChild(stop1);
-			} else if (stops.length === 2) {
-				// Reuse existing stops, rewrite only changed attributes
-				const stop0 = stops[0] as SVGElement;
-				const stop1 = stops[1] as SVGElement;
 
-				setAttributeIfChanged(stop0, "stop-color", color);
-				setAttributeIfChanged(stop0, "stop-opacity", String(opacity));
-				setAttributeIfChanged(stop1, "stop-color", color);
-				setAttributeIfChanged(stop1, "stop-opacity", "1");
+				entry = {
+					gradient,
+					fill: `url(#${id})`,
+					stop0,
+					stop1,
+					color: "",
+					opacity: -1,
+					x1: -Infinity,
+					y1: -Infinity,
+					x2: -Infinity,
+					y2: -Infinity,
+				};
+				isNew = true;
 			}
 
-			// Record in cache and id map
-			cache.set(cacheKey, gradient);
-			idToKey.set(id, cacheKey);
+			// Write all attributes for new gradients, just differences for recycled ones
+			if (isNew) {
+				setAttr(entry.stop0, "stop-color", color);
+				setAttr(entry.stop0, "stop-opacity", String(opacity));
+				setAttr(entry.stop1, "stop-color", color);
+				setAttr(entry.stop1, "stop-opacity", "1");
+				setAttr(entry.gradient, "x1", String(x1));
+				setAttr(entry.gradient, "y1", String(y1));
+				setAttr(entry.gradient, "x2", String(x2));
+				setAttr(entry.gradient, "y2", String(y2));
+			} else {
+				// Recycled: only write what differs from before it was parked
+				if (entry.color !== color) {
+					setAttr(entry.stop0, "stop-color", color);
+					setAttr(entry.stop1, "stop-color", color);
+				}
+				if (entry.opacity !== opacity) {
+					setAttr(entry.stop0, "stop-opacity", String(opacity));
+				}
+				if (entry.x1 !== x1) {
+					setAttr(entry.gradient, "x1", String(x1));
+				}
+				if (entry.y1 !== y1) {
+					setAttr(entry.gradient, "y1", String(y1));
+				}
+				if (entry.x2 !== x2) {
+					setAttr(entry.gradient, "x2", String(x2));
+				}
+				if (entry.y2 !== y2) {
+					setAttr(entry.gradient, "y2", String(y2));
+				}
+			}
 
-			return `url(#${id})`;
+			// Update entry with final values
+			entry.color = color;
+			entry.opacity = opacity;
+			entry.x1 = x1;
+			entry.y1 = y1;
+			entry.x2 = x2;
+			entry.y2 = y2;
+
+			byOwner.set(owner, entry);
+			return entry.fill;
 		},
 
-		retainFill(fill: string | null): void {
-			if (!fill || !fill.startsWith("url(#") || !fill.endsWith(")")) {
-				return;
-			}
-
-			// Extract id from url(#...)
-			const id = fill.slice(5, -1);
-			const cacheKey = idToKey.get(id);
-			if (cacheKey) {
-				referencedKeys.add(cacheKey);
-			}
+		retain(owner: SVGElement): void {
+			referenced.add(owner);
 		},
 
 		sweep(): void {
-			const keysToRemove: string[] = [];
+			const owners = Array.from(byOwner.keys());
+			for (const owner of owners) {
+				if (!referenced.has(owner)) {
+					const entry = byOwner.get(owner)!;
 
-			for (const [key, gradient] of cache) {
-				if (!referencedKeys.has(key)) {
 					// A parked gradient stays inside `defs`. Nothing references it, so it
 					// paints nothing, and leaving it there is what makes recycling free:
 					// detaching and re-appending would be two structural mutations per
 					// reuse, which is the cost this pool exists to avoid.
-					if (!gradientPool.release(gradient)) {
-						gradient.remove();
+					if (parked.length < GRADIENT_POOL_CAPACITY) {
+						parked.push(entry);
+						forgetAttrs(entry.gradient);
+						forgetAttrs(entry.stop0);
+						forgetAttrs(entry.stop1);
+					} else {
+						entry.gradient.remove();
+						forgetAttrs(entry.gradient);
+						forgetAttrs(entry.stop0);
+						forgetAttrs(entry.stop1);
 					}
-					keysToRemove.push(key);
-					const id = gradient.getAttribute("id");
-					if (id) {
-						idToKey.delete(id);
-					}
+
+					byOwner.delete(owner);
 				}
 			}
 
-			for (const key of keysToRemove) {
-				cache.delete(key);
-			}
-
-			referencedKeys.clear();
+			referenced.clear();
 		},
 
 		drain(): void {
-			for (const gradient of cache.values()) {
-				gradient.remove();
+			for (const entry of byOwner.values()) {
+				entry.gradient.remove();
+				forgetAttrs(entry.gradient);
+				forgetAttrs(entry.stop0);
+				forgetAttrs(entry.stop1);
 			}
-			cache.clear();
-			idToKey.clear();
+			byOwner.clear();
 
-			const drained = gradientPool.drain();
-			for (const gradient of drained) {
-				gradient.remove();
+			for (const entry of parked) {
+				entry.gradient.remove();
+				forgetAttrs(entry.gradient);
+				forgetAttrs(entry.stop0);
+				forgetAttrs(entry.stop1);
 			}
+			parked.length = 0;
 		},
 	};
 }

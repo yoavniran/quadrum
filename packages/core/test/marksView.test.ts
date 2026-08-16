@@ -247,30 +247,24 @@ describe("renderMarks", () => {
 			});
 			render(dom, state1);
 
-			expect(defs.querySelectorAll("linearGradient").length).toBe(1);
+			const minted = Array.from(defs.querySelectorAll("linearGradient"));
+			expect(minted.length).toBe(1);
 
-			// The first move has nothing parked to draw on yet, so it mints a second
-			// element; the one it displaced is parked in place rather than detached.
-			const state2 = applyOptions(defaultState(), {
-				marks: { enabled: true, auto: [{ from: "e2", to: "e5", pen: "red" }], user: [] },
-			});
-			render(dom, state2);
-
-			const afterMove = Array.from(defs.querySelectorAll("linearGradient"));
-			expect(afterMove.length).toBe(2);
-
-			// Every move after that is the steady state this pool exists for: the parked
-			// element is re-acquired and rewritten, so nothing new is created no matter
-			// how many times the arrow moves.
-			for (const to of ["e6", "e7", "e8", "e5", "e3"] as const) {
+			// Moving the arrow retires one mark key and creates another, but the shed
+			// shaft is handed straight to the new mark rather than parked and
+			// re-acquired. The shaft therefore keeps its identity across the move, and
+			// gradients are owned by their shaft, so the very same element is
+			// re-pointed at the new segment. No second element is ever minted, however
+			// many times the arrow moves.
+			for (const to of ["e5", "e6", "e7", "e8", "e5", "e3"] as const) {
 				const next = applyOptions(defaultState(), {
 					marks: { enabled: true, auto: [{ from: "e2", to, pen: "red" }], user: [] },
 				});
 				render(dom, next);
 
 				const settled = Array.from(defs.querySelectorAll("linearGradient"));
-				expect(settled.length).toBe(2);
-				expect(settled.every((g) => afterMove.includes(g))).toBe(true);
+				expect(settled.length).toBe(1);
+				expect(settled[0]).toBe(minted[0]);
 			}
 		});
 

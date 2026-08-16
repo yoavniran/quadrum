@@ -164,12 +164,18 @@ export function applyOptions(state: BoardState, options: BoardOptions): BoardSta
 		// build all 32 entries only to drop them -- and a position is supplied on
 		// every ordinary update, which is where that waste is actually paid.
 		pieces: options.position !== undefined ? fenToPieces(options.position) : new Map(state.pieces),
-		moves: { ...state.moves },
-		select: { ...state.select },
-		drag: { ...state.drag },
-		marks: { ...state.marks },
-		animate: { ...state.animate },
-		promotion: { ...state.promotion },
+		// Each group is cloned only when the bag actually carries it, because
+		// every group below is written exclusively inside its own
+		// `options.<group> !== undefined` guard -- an untouched group is never
+		// assigned through, so aliasing the previous state's object is safe and
+		// the clone was pure waste. An ordinary position update carries no group
+		// at all and was paying six object allocations for that.
+		moves: options.moves !== undefined ? { ...state.moves } : state.moves,
+		select: options.select !== undefined ? { ...state.select } : state.select,
+		drag: options.drag !== undefined ? { ...state.drag } : state.drag,
+		marks: options.marks !== undefined ? { ...state.marks } : state.marks,
+		animate: options.animate !== undefined ? { ...state.animate } : state.animate,
+		promotion: options.promotion !== undefined ? { ...state.promotion } : state.promotion,
 	};
 
 	// Apply simple fields

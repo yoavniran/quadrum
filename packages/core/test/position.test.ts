@@ -10,6 +10,29 @@ describe("position", () => {
 		expect(pieces.size).toBe(32);
 	});
 
+	// Pieces are interned: one shared frozen object per FEN character, so a parse
+	// allocates none. The sharing is only sound while nothing mutates a Piece in
+	// place, and freeze() is what enforces that against consumer code as well --
+	// without it a caller could edit one square's piece and silently change every
+	// other square holding the same kind, on every board in the process.
+	it("fenToPieces returns one shared frozen instance per piece kind", () => {
+		const pieces = fenToPieces(INITIAL_PLACEMENT);
+		const a2 = pieces.get("a2")!;
+		const h2 = pieces.get("h2")!;
+
+		expect(a2).toEqual({ color: "white", role: "pawn" });
+		expect(h2).toBe(a2);
+		expect(Object.isFrozen(a2)).toBe(true);
+		// Colour must not collapse: same role, different instance.
+		expect(pieces.get("a7")).not.toBe(a2);
+	});
+
+	it("fenToPieces shares instances across separate parses", () => {
+		expect(fenToPieces(INITIAL_PLACEMENT).get("e1")).toBe(
+			fenToPieces("4k3/8/8/8/8/8/8/4K3").get("e1"),
+		);
+	});
+
 	it("fenToPieces has correct pieces on initial position", () => {
 		const pieces = fenToPieces(INITIAL_PLACEMENT);
 

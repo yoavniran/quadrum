@@ -71,9 +71,41 @@ describe("options", () => {
 		const next = applyOptions(state, {});
 
 		expect(state).not.toBe(next);
+		// pieces is cloned unconditionally: board.ts mutates it in place on the
+		// move and drag paths, so sharing it would write through to the state the
+		// caller still holds.
 		expect(state.pieces).not.toBe(next.pieces);
-		expect(state.moves).not.toBe(next.moves);
-		expect(state.marks).not.toBe(next.marks);
+	});
+
+	// The groups are cloned lazily. Each one is only ever assigned through inside
+	// its own `options.<group> !== undefined` branch, so an untouched group is
+	// safe to alias -- and an ordinary position update touches none of them, which
+	// is where the six wasted allocations per update were being paid.
+	it("applyOptions clones only the groups the bag touches", () => {
+		const state = defaultState();
+		const next = applyOptions(state, { marks: { enabled: false } });
+
+		expect(next.marks).not.toBe(state.marks);
+		expect(next.marks.enabled).toBe(false);
+		// Untouched, so aliased rather than copied.
+		expect(next.moves).toBe(state.moves);
+		expect(next.select).toBe(state.select);
+		expect(next.drag).toBe(state.drag);
+		expect(next.animate).toBe(state.animate);
+		expect(next.promotion).toBe(state.promotion);
+	});
+
+	it("applyOptions does not write through an aliased group to the previous state", () => {
+		const state = defaultState();
+		const before = state.marks.enabled;
+
+		// Two hops, neither touching marks, then one that does. If the lazy alias
+		// let a later write land on the original object, `state` would see it.
+		const a = applyOptions(state, { orientation: "black" });
+		const b = applyOptions(a, { selected: "e4" });
+		applyOptions(b, { marks: { enabled: !before } });
+
+		expect(state.marks.enabled).toBe(before);
 	});
 
 	it("applyOptions does not mutate input state", () => {

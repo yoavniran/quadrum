@@ -708,4 +708,59 @@ describe("renderMarks", () => {
 			expect(shaftsAfter[1]?.getAttribute("data-pen")).toBe("green");
 		});
 	});
+
+	describe("retention under churn", () => {
+		const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
+
+		/** An engine tick: every key differs from the previous render's, which is the
+		 *  case the node handoff and the owner-keyed gradients are built for. */
+		function tick(i: number): BoardState {
+			const marks = [
+				{ from: `${FILES[i % 8]}2`, to: `${FILES[(i + 1) % 8]}4`, pen: "green" },
+				{ from: `${FILES[(i + 2) % 8]}7`, to: `${FILES[(i + 3) % 8]}5`, pen: "blue" },
+				{ from: `${FILES[(i + 4) % 8]}3` },
+			];
+			return applyOptions(defaultState(), {
+				marks: { enabled: true, auto: marks as any, user: [] },
+			});
+		}
+
+		function census(): number {
+			return container.querySelectorAll("*").length;
+		}
+
+		it("holds a flat node census across hundreds of engine ticks", () => {
+			const dom = buildDom(container);
+
+			// Let the pools reach steady state before sampling.
+			for (let i = 0; i < 20; i++) {
+				render(dom, tick(i));
+			}
+			const settled = census();
+
+			for (let i = 20; i < 400; i++) {
+				render(dom, tick(i));
+			}
+
+			// Nothing accumulates: retired nodes are either handed to the mark being
+			// painted, parked in a capacity-capped pool, or removed outright.
+			expect(census()).toBe(settled);
+		});
+
+		it("keeps gradients bounded by the pool capacity when every arrow retires", () => {
+			const dom = buildDom(container);
+
+			for (let i = 0; i < 200; i++) {
+				render(dom, tick(i));
+			}
+
+			// Drop to no marks at all. Every owner goes unreferenced in one sweep, so
+			// this is the worst case for the parked pool.
+			render(dom, applyOptions(defaultState(), { marks: { enabled: true, auto: [], user: [] } }));
+
+			// `defs` is minted lazily by the first gradient, so it only exists now.
+			const defs = container.querySelector("defs")!;
+			expect(defs.querySelectorAll("linearGradient").length).toBeLessThanOrEqual(GRADIENT_POOL_CAPACITY);
+		});
+	});
 });

@@ -101,6 +101,10 @@ jobs:
   # Both halves matter because they cover different merge strategies: the commit
   # range is what lands on a merge commit or a rebase, and the PR title is what
   # lands as the subject of a squash merge.
+  #
+  # Under release-please this is load-bearing, not cosmetic: the type on the
+  # commit that lands is what picks the version bump and writes the changelog
+  # line. A `chore:` where a `fix:` belonged ships nothing.
   commits:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -134,26 +138,3 @@ jobs:
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: printf '%s\n' "$PR_TITLE" | pnpm exec commitlint --verbose
-
-  # Advisory only: a PR touching published source usually wants a changeset, but
-  # docs-, test- and CI-only PRs legitimately have none, so this never fails the
-  # build. It just puts a notice on the PR.
-  changeset:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Warn when published packages changed with no changeset
-        run: |
-          base="origin/${{ github.base_ref }}"
-          changed=$(git diff --name-only "$base"...HEAD -- packages/core/src packages/react/src)
-          added=$(git diff --name-only "$base"...HEAD -- .changeset | grep -E '\.changeset/.+\.md$' || true)
-          if [ -n "$changed" ] && [ -z "$added" ]; then
-            echo "::warning::Package source changed but no changeset was added. Run 'pnpm changeset' if this should ship a new version."
-          else
-            echo "Changeset check OK."
-          fi

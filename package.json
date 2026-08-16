@@ -29,12 +29,9 @@
     "bench:quick": "pnpm --filter quadrum-bench bench:quick",
     "bench:gate": "node .github/scripts/write-bench-report.mjs gate",
     "bench:summarize": "node .github/scripts/write-bench-report.mjs summarize",
-    "changeset": "changeset",
-    "release": "pnpm build && changeset publish",
     "prepare": "husky"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.31.1",
     "@commitlint/cli": "^21.2.1",
     "@commitlint/config-conventional": "^21.2.0",
     "@playwright/test": "^1.62.1",

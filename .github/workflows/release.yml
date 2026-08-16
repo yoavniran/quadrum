@@ -6,6 +6,10 @@ name: Release
 #   1. Every PR that changes published code should add a changeset
 #      (`pnpm changeset`) describing the bump. This is not enforced -- ci.yml's
 #      "changeset" job only warns, since docs/CI-only PRs legitimately have none.
+#      A PR that skips it is still released: on push to main, step 2 generates a
+#      changeset covering every commit that changed published source without one,
+#      so nothing ships undescribed. That backstop writes commit subjects; a
+#      hand-written changeset writes prose, and is always the better entry.
 #   2. On push to main, this workflow opens/updates a "Version Packages" PR that
 #      applies the pending changesets: bumps versions, rewrites CHANGELOG.md,
 #      deletes the consumed changeset files. The PR title names the version it
@@ -89,6 +93,20 @@ jobs:
         run: |
           pnpm typecheck
           pnpm test
+
+      # Backstop for the changeset nobody wrote. Any commit since the last version
+      # bump that changed published source (packages/*/src, packages/*/README.md)
+      # without adding a changeset gets covered by one generated here.
+      #
+      # It runs BEFORE the pending-version step on purpose: the release plan, and
+      # therefore the PR title, has to account for it. The file is written into
+      # the tree and never committed -- `changeset version` consumes and deletes
+      # it in the same job, so what reaches the version PR is the changelog entry.
+      #
+      # A hand-written changeset always wins: a commit that brought its own is
+      # skipped, so this only ever adds what would otherwise ship undescribed.
+      - name: Cover undescribed changes with a changeset
+        run: node .github/scripts/write-auto-changeset.mjs
 
       # changesets/action takes the PR title as a *static* input, resolved before
       # `changeset version` ever runs -- so for the title to name the version, the

@@ -223,8 +223,24 @@ the way a consumer does.
 
 Releases are driven by [changesets](https://github.com/changesets/changesets): add one
 with `pnpm changeset` in any PR that changes published code. CI posts a warning — not a
-failure — on a PR that touches `packages/*/src` without one, because a comment fix or a
-behaviour-preserving refactor legitimately has nothing to announce. On merge to `main`,
+failure — on a PR that touches published files without one.
+
+A warning was not enough on its own. Seven consecutive `perf(core)` PRs took it and merged,
+so the pending release described a packaging change and none of the work that had actually
+changed what consumers run. Since then, the release workflow has covered the gap itself:
+before it computes the release plan, `.github/scripts/write-auto-changeset.mjs` scans every
+commit since the last version bump, and if any of them changed published bytes
+(`packages/*/src`, `packages/*/README.md`) without adding a changeset, it generates one
+covering them. Bump level comes from the commit subjects — `feat` is a minor, a `!` marker
+or a `BREAKING CHANGE:` trailer is a major, and anything else that ships bytes is a patch,
+whatever it was called.
+
+The generated file is written into the working tree and never committed: `changeset version`
+consumes it in the same job, so what reaches the version PR is the changelog entry. A
+hand-written changeset always wins — a commit that brought its own is skipped, and its prose
+goes to the changelog untouched. The generator only writes commit subjects, which is why the
+CI warning still exists: it is the difference between a release note and a git log. On merge
+to `main`,
 `.github/workflows/release.yml` opens a "Version Packages" PR; merging *that* publishes to
 npm via trusted publishing (OIDC — no token) and tags a GitHub release.
 

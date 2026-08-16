@@ -135,9 +135,11 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: printf '%s\n' "$PR_TITLE" | pnpm exec commitlint --verbose
 
-  # Advisory only: a PR touching published source usually wants a changeset, but
-  # docs-, test- and CI-only PRs legitimately have none, so this never fails the
-  # build. It just puts a notice on the PR.
+  # Advisory only, and now doubly so: release.yml generates a changeset for any
+  # commit that changed published source without one, so a missing changeset can
+  # no longer lose a release -- it only costs that change its prose, since the
+  # generated entry is a commit subject rather than an explanation. Docs-, test-
+  # and CI-only PRs legitimately have none, so this never fails the build.
   changeset:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -150,10 +152,12 @@ jobs:
       - name: Warn when published packages changed with no changeset
         run: |
           base="origin/${{ github.base_ref }}"
-          changed=$(git diff --name-only "$base"...HEAD -- packages/core/src packages/react/src)
+          # The same published paths write-auto-changeset.mjs watches: the bytes
+          # that go in the tarball, README included.
+          changed=$(git diff --name-only "$base"...HEAD -- packages/core/src packages/react/src packages/core/README.md packages/react/README.md)
           added=$(git diff --name-only "$base"...HEAD -- .changeset | grep -E '\.changeset/.+\.md$' || true)
           if [ -n "$changed" ] && [ -z "$added" ]; then
-            echo "::warning::Package source changed but no changeset was added. Run 'pnpm changeset' if this should ship a new version."
+            echo "::warning::Published files changed with no changeset. The release will generate one from the commit subject; run 'pnpm changeset' to write a better entry yourself."
           else
             echo "Changeset check OK."
           fi

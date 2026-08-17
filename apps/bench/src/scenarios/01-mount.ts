@@ -2,7 +2,7 @@
  * Scenario 'mount' — mount a full board and measure first render.
  */
 
-import { timeScript, forceLayout, settle } from "../core/clock";
+import { forceLayout, settle } from "../core/clock";
 import { metricFromSamples } from "../core/harness";
 import { elementCount } from "../core/guards";
 import { INITIAL_PLACEMENT } from "quadrum";
@@ -25,6 +25,11 @@ export const mountScenario: Scenario = {
 	// Headlines on per-iteration metrics here rather than totals. Medians are 1.6 ms and
 	// 1.05 ms — hundreds of ticks clear of the 5µs timer floor — so the ratio is
 	// already trustworthy. Do not "fix" this one to total-time metrics.
+	//
+	// NOTE: `mount-layout-ms` CHANGED MEANING when the double-mount was removed
+	// (see run()). It now includes the mount call, where before it timed only a
+	// bare reflow. The `mount` entry in results/baseline.json predates that and
+	// is not comparable -- it must be re-minted before this scenario gates again.
 	headlineMetric: "mount-layout-ms",
 	defaults: { sizePx: 480, iterations: 25, warmupIterations: 2, discardFirst: 5 },
 
@@ -44,21 +49,23 @@ export const mountScenario: Scenario = {
 			const child = frame.document.createElement("div");
 			host.appendChild(child);
 
-			// Script timing: just the mount call
-			const { ms: scriptMs } = timeScript(() => {
-				factory.mount(child, {
-					placement: INITIAL_PLACEMENT,
-					orientation: "white",
-					coordinates: false,
-					animate: false,
-					animationMs: 0,
-					interactive: false,
-					sizePx: options.sizePx,
-				});
-			});
-			scriptSamples.push(scriptMs);
-
-			// Force layout to measure full time
+			// ONE mount per iteration, and the two timings are NESTED brackets
+			// around it: script is the call, layout is the call plus the forced
+			// reflow. That relationship is the whole point -- script must be a
+			// subset of layout, or the two numbers cannot be differenced and the
+			// "where did the time go" question has no answer.
+			//
+			// This scenario previously mounted TWICE into the same child: once
+			// inside a timeScript bracket, then again, with the layout bracket
+			// opened only AFTER the second mount returned. So `mount-layout-ms`
+			// -- the GATED headline metric -- excluded the mount call entirely
+			// and timed a bare reflow, while the scenario's own description and
+			// endCondition claimed it measured "construction plus first render".
+			// The first adapter was also never destroyed, leaking a board per
+			// iteration, and the second mount landed in a container the first had
+			// already filled, so each library's overwrite behaviour (quadrum
+			// wipes via innerHTML in buildDom) leaked into the number as well.
+			const t0 = performance.now();
 			const adapter = factory.mount(child, {
 				placement: INITIAL_PLACEMENT,
 				orientation: "white",
@@ -68,12 +75,13 @@ export const mountScenario: Scenario = {
 				interactive: false,
 				sizePx: options.sizePx,
 			});
+			const t1 = performance.now();
 
 			try {
-				const t0 = performance.now();
 				forceLayout(child);
-				const layoutMs = performance.now() - t0;
-				layoutSamples.push(layoutMs);
+				const t2 = performance.now();
+				scriptSamples.push(t1 - t0);
+				layoutSamples.push(t2 - t0);
 
 				// Verify geometry
 				const pieces = adapter.pieceElements();

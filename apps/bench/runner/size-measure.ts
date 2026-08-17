@@ -35,7 +35,8 @@ export interface SizeTarget {
  * A file name is a literal, but overweight resolves `path` as a glob, so any
  * glob metacharacter in the name has to be escaped or the rule silently matches
  * nothing (or, worse, something else). pnpm's store paths are the realistic
- * source of these -- `chessground@9.2.1` today, a `+build` tag tomorrow.
+ * source of these -- `@lichess-org+chessground@10.1.1` today, which already
+ * carries both a `@` and a `+`, and a `+build` tag tomorrow.
  */
 function escapeGlob(name: string): string {
 	return name.replace(/[\\*?[\](){}!+@]/g, (char) => `\\${char}`);

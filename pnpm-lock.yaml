@@ -57,15 +57,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/core
     devDependencies:
+      '@lichess-org/chessground':
+        specifier: 10.1.1
+        version: 10.1.1
       '@playwright/test':
         specifier: ^1.62.1
         version: 1.62.1
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
-      chessground:
-        specifier: 9.2.1
-        version: 9.2.1
       overweight:
         specifier: ^2.2.0
         version: 2.2.0
@@ -457,6 +457,9 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@lichess-org/chessground@10.1.1':
+    resolution: {integrity: sha512-IBEs8+J64/zE8QB4NXxsvpjm/tHRjfQAdWwUh4xzqqN+RValgthWHemLnxsmtHFwuxvO4lHd+crp1ecgZxKVoQ==}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
@@ -1018,10 +1021,6 @@ packages:
   chai@6.2.2:
     resolution: {integrity: sha512-NUPRluOfOiTKBKvWPtSD4PhFvWCqOi0BGStNWs57X9js7XGTprSmFoz5F0tWhR4WPjNeR9jXqdC7/UpSJTnlRg==}
     engines: {node: '>=18'}
-
-  chessground@9.2.1:
-    resolution: {integrity: sha512-KIdxm0zD69e62XRwdnFB0XUNYSzn5HM3pMazRCwpfruRUowFI8y+1OAK5YSyBff29myeV1/4o5Q8T191+Irbog==}
-    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
   chokidar@4.0.3:
     resolution: {integrity: sha512-Qgzu8kfBvo+cA4962jnP1KkS6Dop5NS6g7R5LFYJr4b8Ub94PPQXUksCw9PvXoeXPRRddRNC5C1JQUR2SMGtnA==}
@@ -2093,6 +2092,8 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
+  '@lichess-org/chessground@10.1.1': {}
+
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
 
@@ -2469,8 +2470,6 @@ snapshots:
   callsites@3.1.0: {}
 
   chai@6.2.2: {}
-
-  chessground@9.2.1: {}
 
   chokidar@4.0.3:
     dependencies:

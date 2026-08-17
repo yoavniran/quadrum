@@ -36,7 +36,8 @@ type EntryName = (typeof ENTRY_NAMES)[number];
  * emitted. See CLEANROOM.md.
  */
 function cssTargets(appRoot: string): SizeTarget[] {
-	const cg = (file: string) => fileURLToPath(import.meta.resolve(`chessground/assets/${file}`));
+	const cg = (file: string) =>
+		fileURLToPath(import.meta.resolve(`@lichess-org/chessground/assets/${file}`));
 
 	return [
 		{ key: "css:quadrum", file: resolve(appRoot, "../../packages/core/assets/quadrum.css"), compression: "none" },

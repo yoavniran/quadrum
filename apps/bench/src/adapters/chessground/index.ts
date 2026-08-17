@@ -2,13 +2,17 @@
  * chessground BoardAdapter for the benchmark.
  */
 
-import { Chessground } from "chessground";
-import type { Config } from "chessground/config";
-import type { DrawShape } from "chessground/draw";
+// @lichess-org/chessground, not the bare `chessground` name: lichess moved
+// publishing to the scoped package at v10 and the unscoped one is deprecated on
+// npm, frozen at 9.2.1. Benchmarking the abandoned name would have measured a
+// version nobody installs today.
+import { Chessground } from "@lichess-org/chessground";
+import type { Config } from "@lichess-org/chessground/config";
+import type { DrawShape } from "@lichess-org/chessground/draw";
 
-import "chessground/assets/chessground.base.css";
-import "chessground/assets/chessground.brown.css";
-import "chessground/assets/chessground.cburnett.css";
+import "@lichess-org/chessground/assets/chessground.base.css";
+import "@lichess-org/chessground/assets/chessground.brown.css";
+import "@lichess-org/chessground/assets/chessground.cburnett.css";
 
 import type {
 	AdapterFactory,
@@ -27,7 +31,7 @@ import { squareFraction } from "../../data/squares";
 export const chessgroundAdapter: AdapterFactory = {
 	id: "chessground",
 	label: "chessground",
-	version: "9.2.1",
+	version: "10.1.1",
 
 	mount(host: HTMLElement, options: MountOptions): BoardAdapter {
 		host.style.width = `${options.sizePx}px`;

@@ -19,6 +19,11 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    # Mirrors `minimumReleaseAge: 10080` in pnpm-workspace.yaml. Without it Dependabot
+    # would open PRs for versions pnpm refuses to install, and `pnpm install` in CI
+    # would fail on the PR's own branch.
+    cooldown:
+      default-days: 7
     commit-message:
       # commitlint runs on every commit in a PR and on the PR title, so Dependabot's
       # messages have to be Conventional Commits too, or CI fails on its own PRs.
@@ -55,6 +60,10 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # Actions aren't installed by pnpm, but the same 7-day settling period applies:
+    # a tampered action tag is the same class of risk as a tampered npm publish.
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: ci
       include: scope

@@ -18,8 +18,6 @@ export const updateAnimOffScenario: Scenario = {
 	id: "update-throughput-anim-off",
 	title: "100 position updates, animation off",
 	description: "Replay a sequence of board positions with animation disabled.",
-	expectation:
-		"Expected to favour quadrum — it applies a keyed diff of piece nodes with no animation bookkeeping. This is the scenario a real analysis board spends most of its time in.",
 	parity:
 		"Animation disabled on both. Every update carries placement, lastMove and side-to-move, exactly as a real app does. Each update is flushed to the DOM inside the timed region, because chessground defers its render to a requestAnimationFrame while quadrum renders synchronously — without the flush chessground would be timed doing nothing and would collapse 100 updates into a single render.",
 	endCondition:

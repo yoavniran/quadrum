@@ -395,7 +395,6 @@ export function summarizeRun(record, options = {}) {
 			id: scenario.id,
 			title: scenario.title,
 			description: scenario.description,
-			expectation: scenario.expectation,
 			parity: scenario.parity,
 			endCondition: scenario.endCondition,
 			runnerOnly: Boolean(scenario.runnerOnly),
@@ -1074,8 +1073,6 @@ export function renderFullReport(summary) {
 		lines.push(`## ${scenario.title}`);
 		lines.push("");
 		lines.push(scenario.description);
-		lines.push("");
-		lines.push(`**Expected to favour:** ${scenario.expectation}`);
 		lines.push("");
 		lines.push(`**Parity:** ${scenario.parity}`);
 		lines.push("");

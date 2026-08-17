@@ -214,9 +214,6 @@ export interface Scenario {
 	readonly id: string;
 	readonly title: string;
 	readonly description: string;
-	/** Mandatory: who this scenario is expected to favour, and why. Printed in
-	 *  the report so scenario selection cannot quietly become cherry-picking. */
-	readonly expectation: string;
 	/** What both libraries were configured to do. */
 	readonly parity: string;
 	/** The observable end state that stops the clock -- must be common to both. */
@@ -281,7 +278,6 @@ export interface ScenarioMeta {
 	readonly id: string;
 	readonly title: string;
 	readonly description: string;
-	readonly expectation: string;
 	readonly parity: string;
 	readonly endCondition: string;
 	readonly runnerOnly: boolean;

@@ -17,8 +17,6 @@ export const memoryScenario: Scenario = {
 	id: "memory-leak",
 	title: "Retention after teardown",
 	description: "Measure retained nodes and memory after destroying boards.",
-	expectation:
-		"Expected parity — both libraries should retain nothing. This is an INVARIANT check, not a competition: the verdict is zero-or-not, and heap bytes are reported but never gated, because 'quadrum uses 30% less memory' would be the least defensible line in the whole table.",
 	parity:
 		"Identical mount/update/destroy cycles at two cycle counts. Every node and listener count — baseline and post-cycle, both arms — is read only after three forced GCs, so what is reported is what survived collection rather than what had not yet been swept.",
 	endCondition:

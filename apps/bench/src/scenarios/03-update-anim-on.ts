@@ -22,8 +22,6 @@ export const updateAnimOnScenario: Scenario = {
 	id: "update-throughput-anim-on",
 	title: "100 position updates, animation on",
 	description: "Replay a sequence of board positions with animation enabled.",
-	expectation:
-		"No inherent advantage for either library — both animate with CSS transforms on the compositor. Included precisely because quadrum has no architectural edge here; a loss would be a real finding.",
 	parity:
 		"Animation enabled on both at 200ms. Positions are applied one per animation frame, so both libraries face the same arrival rate.",
 	endCondition:

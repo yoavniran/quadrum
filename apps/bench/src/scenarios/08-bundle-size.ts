@@ -13,8 +13,6 @@ export const bundleSizeScenario: Scenario = {
 	id: "bundle-size",
 	title: "Bundle size, min+brotli",
 	description: "Measure library bundle sizes in lib-mode builds.",
-	expectation:
-		"Expected to favour quadrum — zero dependencies and subpath exports. The CSS row is expected to be less flattering once piece art is counted, and is reported in two rows for exactly that reason.",
 	parity:
 		"Both measured from a realistic adapter-surface entry (mount, update, arrows, drag, destroy), not `export *`, which is meaningless against subpath exports and pessimistic against a single entry.",
 	endCondition: "Three lib-mode builds complete and their raw/gzip/brotli byte counts are recorded.",

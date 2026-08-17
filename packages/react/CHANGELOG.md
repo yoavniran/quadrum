@@ -1,5 +1,46 @@
 # quadrum-react
 
+## [0.3.0](https://github.com/yoavniran/quadrum/compare/quadrum-react@0.2.0...quadrum-react@0.3.0) (2026-08-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* The tarballs shipped `src/` alongside `dist/`, so every module travelled twice -- once as TypeScript and once compiled, with the sourcemaps already embedding the same source a third time. `files` is now `dist` (plus core's `assets/`, which is a real published export), which takes `quadrum` from 359 kB unpacked across 81 files to 263 kB across 60, and `quadrum-react` to 28 kB across 11. Sourcemaps keep their embedded `sourcesContent`, so stepping into the original TypeScript still works.
+
+### Features
+
+* initial commit — quadrum board renderer ([10dc6de](https://github.com/yoavniran/quadrum/commit/10dc6def290f0cc11ddbd4cc8a8eca24b8dc544d))
+* report every tap through select.onTap, and fix three input bugs ([77c4280](https://github.com/yoavniran/quadrum/commit/77c4280ecfb1041df60a900729d24011d87e558f))
+
+
+### Bug fixes
+
+* let react consumers stop a press from wiping their marks ([7f434ca](https://github.com/yoavniran/quadrum/commit/7f434ca4bdea94eb712465e4471d0faaa62126fd))
+
+
+### Performance
+
+* **core:** recycle mark nodes and pool fade gradients ([#42](https://github.com/yoavniran/quadrum/issues/42)) ([cbf9bbe](https://github.com/yoavniran/quadrum/commit/cbf9bbe984bca16ffdf13e5cbe4be3ac77533af3))
+
+
+### Packaging
+
+* stop 0.x minors versioning both packages as 1.0.0 ([2cf2d52](https://github.com/yoavniran/quadrum/commit/2cf2d52ab117991d32d1cc21d2280f3769f534aa))
+
+
+### CI
+
+* replace changesets with release-please ([#54](https://github.com/yoavniran/quadrum/issues/54)) ([318da5d](https://github.com/yoavniran/quadrum/commit/318da5d60211d4fda192959ed647ed122cceead9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * quadrum bumped to 0.3.0
+  * peerDependencies
+    * quadrum bumped from >=0.1.0 <1 to >=0.3.0
+
 ## 0.2.0
 
 ### Minor Changes

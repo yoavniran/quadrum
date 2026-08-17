@@ -18,8 +18,6 @@ export const mountScenario: Scenario = {
 	id: "mount",
 	title: "Mount a full board",
 	description: "Measure construction plus first render of the standard start position.",
-	expectation:
-		"Expected to favour quadrum — it builds a flat custom-element tree with no virtual-DOM diff on first render. A tie here would be an honest result, not a bug.",
 	parity:
 		"Both mounted with identical size, orientation, coordinates off, animation off, interactivity off, from the same FEN placement.",
 	endCondition:

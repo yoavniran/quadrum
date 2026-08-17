@@ -18,8 +18,6 @@ export const engineArrowTickScenario: Scenario = {
 	id: "engine-arrow-tick",
 	title: "Engine arrow re-draw, per tick",
 	description: "Replace the engine arrow layer 100 times without changing the position.",
-	expectation:
-		"Expected to favour quadrum — it caches pen definitions by key and repaints only the arrow layer. This is the scenario quadrum was built for, and it is named as such rather than presented as a neutral test.",
 	parity:
 		"Both mounted with drawing enabled and a static position; only the auto/engine arrow layer is replaced per tick. Neither adapter re-applies the FEN — doing so would make this measure a full position diff.",
 	endCondition:

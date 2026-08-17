@@ -17,8 +17,6 @@ export const resizeStormScenario: Scenario = {
 	id: "resize-storm",
 	title: "Resize storm, 50 resizes",
 	description: "Resize the board box 50 times and verify clicks still resolve correctly.",
-	expectation:
-		"Expected to favour quadrum heavily — quadrum reads geometry live while chessground must redrawAll() to refresh its cached bounding rect. Because quadrum cannot lose this by construction, it is reported but never gated; gating something you cannot lose is theatre.",
 	parity:
 		"Both are resized through the same host-box style write. Each adapter then does whatever it needs to remain CORRECT — which for chessground means redrawAll(). The contract is a correct, clickable board afterwards, not an equal number of method calls.",
 	endCondition:

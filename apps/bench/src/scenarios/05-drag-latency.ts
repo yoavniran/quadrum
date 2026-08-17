@@ -69,8 +69,6 @@ export const dragLatencyScenario: Scenario = {
 	id: "drag-latency",
 	title: "Drag latency, p95",
 	description: "Measure input handling cost across a press-drag-release gesture.",
-	expectation:
-		"Expected to favour chessground if anything — its pointer path is battle-hardened by lichess. Included deliberately as a scenario quadrum can lose.",
 	parity:
 		"Both mounted interactive with dragging enabled. The identical gesture — press on e2, drag to e4 with 12 waypoints paced at 8 ms each (125 Hz mouse rate), release — is driven by the runner as real browser input at the same viewport coordinates, so neither library is asked to respond to an event family it does not listen to. Timing covers the page-side handling of each input event only; the runner round-trip is excluded by starting the clock inside the page.",
 	endCondition:

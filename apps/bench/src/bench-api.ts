@@ -39,7 +39,6 @@ export function installBenchApi(args: {
 				id: s.id,
 				title: s.title,
 				description: s.description,
-				expectation: s.expectation,
 				parity: s.parity,
 				endCondition: s.endCondition,
 				runnerOnly: s.runnerOnly || false,

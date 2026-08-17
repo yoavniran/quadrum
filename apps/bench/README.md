@@ -47,16 +47,16 @@ committed to this MIT repository.
 
 ## What is measured
 
-| # | Scenario | Headline metric | Gated | Expected to favour |
-| --- | --- | --- | --- | --- |
-| 1 | Mount a full board | `mount-layout-ms` | ✅ | quadrum, slightly |
-| 2 | 100 position updates, animation off | `update-total-script-ms` | ✅ | quadrum |
-| 3 | 100 position updates, animation on | `frame-interval-p95` | — | neither; parity expected |
-| 4 | Engine arrow re-draw, per tick | `arrow-tick-total-script-ms` | ✅ | quadrum |
-| 5 | Drag latency, p95 | `drag-latency-p95-ms` | — | **chessground** |
-| 6 | Resize storm, 50 resizes | `resize-layout-ms` | — | quadrum, by construction |
-| 7 | Retention after teardown | `retained-nodes` | ✅ (as `=== 0`) | neither; parity expected |
-| 8 | Bundle size, min+brotli | `bundle-brotli-bytes` | ✅ (absolute, +2%) | quadrum |
+| # | Scenario | Headline metric | Gated |
+| --- | --- | --- | --- |
+| 1 | Mount a full board | `mount-layout-ms` | ✅ |
+| 2 | 100 position updates, animation off | `update-total-script-ms` | ✅ |
+| 3 | 100 position updates, animation on | `frame-interval-p95` | — |
+| 4 | Engine arrow re-draw, per tick | `arrow-tick-total-script-ms` | ✅ |
+| 5 | Drag latency, p95 | `drag-latency-p95-ms` | — |
+| 6 | Resize storm, 50 resizes | `resize-layout-ms` | — |
+| 7 | Retention after teardown | `retained-nodes` | ✅ (as `=== 0`) |
+| 8 | Bundle size, min+brotli | `bundle-brotli-bytes` | ✅ (absolute, +2%) |
 
 Scenario 4 headlines **total elapsed time over the whole loop** rather than per-iteration metrics.
 Per-iteration medians sit 3–9 ticks above the 5µs timer floor (chessground at 0.045 ms / 9 ticks),
@@ -65,13 +65,17 @@ so the ratio is `real ÷ quantized`, swinging 9.58× → 16.00× between two ide
 keeping both subjects well clear of the floor. That makes the ratio trustworthy. Scenario 2 uses
 the same approach. Both headline the total; per-iteration metrics still ship in the full table.
 
-Every scenario declares its own `expectation`, `parity` and `endCondition` in
-`src/scenarios/*.ts`, and those three sentences travel with the numbers into the results JSON and
-into every rendered table. They are data, not documentation, precisely because they are the three
-things a benchmark is most likely to be quietly wrong about.
+Every scenario declares its own `parity` and `endCondition` in `src/scenarios/*.ts`, and those two
+sentences travel with the numbers into the results JSON and into every rendered table. They are
+data, not documentation, precisely because they are the two things a benchmark is most likely to
+be quietly wrong about.
 
-The set deliberately includes scenarios quadrum is expected to lose (5) and to draw (3, 7). A
-suite that only contains its author's wins is a brochure.
+No scenario declares who it is expected to favour. A prediction is not a measurement, it cannot be
+falsified by the run that follows it, and printing one above a table primes the reader before they
+reach the numbers. What keeps the set from being cherry-picked is structural instead: the registry
+is fixed in git, the renderer emits **every** scenario in it, and there is no supported way to
+publish with the losing rows removed. A suite that only contains its author's wins is a brochure,
+and the guard against that is the renderer, not a promise.
 
 **Scenario 6 is reported and never gated.** quadrum cannot lose it: it caches no geometry, so
 there is nothing for a resize to invalidate. Gating a result you cannot lose is theatre.

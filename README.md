@@ -44,8 +44,10 @@ It also fixes a handful of structural problems that force chessground consumers 
 
 ### Performance
 
-Measured against [chessground](https://github.com/lichess-org/chessground) 9.2.1, installed as a
-dev-only dependency of the benchmark app and never shipped.
+Measured against [chessground](https://github.com/lichess-org/chessground) 10.1.1, installed as a
+dev-only dependency of the benchmark app and never shipped. That is the `@lichess-org/chessground`
+package — lichess moved publishing there at v10, and the unscoped `chessground` name is deprecated
+on npm and frozen at 9.2.1.
 
 <!-- bench:headline:start -->
 | Scenario | quadrum | chessground 9.2.1 | Ratio |

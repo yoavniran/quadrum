@@ -1,8 +1,12 @@
 # quadrum-bench
 
 Side-by-side benchmarks of [quadrum](../../packages/core) against
-[chessground](https://github.com/lichess-org/chessground) 9.2.1 — a visual page you can watch and
+[chessground](https://github.com/lichess-org/chessground) 10.1.1 — a visual page you can watch and
 a headless runner that emits reproducible JSON.
+
+The dependency is `@lichess-org/chessground`. lichess moved publishing to that scoped package at
+v10; the unscoped `chessground` name is **deprecated** on npm and frozen at 9.2.1, so benchmarking
+it would have measured a version nobody installs today.
 
 This package is private. It is never published, and chessground is a **development-only**
 dependency of it.

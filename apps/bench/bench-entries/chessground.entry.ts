@@ -5,9 +5,9 @@
  * it is never imported by the app.
  */
 
-import { Chessground } from "chessground";
-import type { Config } from "chessground/config";
-import type { DrawShape } from "chessground/draw";
+import { Chessground } from "@lichess-org/chessground";
+import type { Config } from "@lichess-org/chessground/config";
+import type { DrawShape } from "@lichess-org/chessground/draw";
 
 /**
  * Mount a board and exercise the adapter surface.

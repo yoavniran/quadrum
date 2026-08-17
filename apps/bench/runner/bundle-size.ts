@@ -65,6 +65,15 @@ async function buildEntry(appRoot: string, entry: string, outDir: string): Promi
 			minify: "esbuild",
 			write: true,
 			sourcemap: false,
+			// Stated explicitly because this build INHERITS apps/bench/vite.config.ts
+			// (see below), and that config sets a multi-page `input` for the frame
+			// isolation. `lib.entry` only becomes the input when `input` is unset, so
+			// the inherited pages would silently win and every entry here would build
+			// the same three HTML pages -- making all three bundles identical and
+			// every subject exactly zero bytes after the baseline subtraction. That
+			// is not hypothetical: it shipped, and the gate read 0 B as a 100%
+			// improvement and passed.
+			rollupOptions: { input: entry },
 		},
 		// No `resolve` here on purpose: `root` is apps/bench, so this build loads
 		// apps/bench/vite.config.ts and inherits its alias, which maps quadrum to
@@ -120,11 +129,27 @@ export async function measureBundles(appRoot: string): Promise<BundleSizeResult[
 		// Subtract the baseline entry's own bytes from each subject, per
 		// compression. Clamped at zero: a negative "size" is never the honest
 		// reading, it just means the two builds shared more than they differed.
-		const subject = (name: EntryName) => ({
-			raw: Math.max(0, requireSize(sizes, jsKey(name, "none")) - requireSize(sizes, jsKey("baseline", "none"))),
-			gzip: Math.max(0, requireSize(sizes, jsKey(name, "gzip")) - requireSize(sizes, jsKey("baseline", "gzip"))),
-			brotli: Math.max(0, requireSize(sizes, jsKey(name, "brotli")) - requireSize(sizes, jsKey("baseline", "brotli"))),
-		});
+		const subject = (name: EntryName) => {
+			const measured = {
+				raw: Math.max(0, requireSize(sizes, jsKey(name, "none")) - requireSize(sizes, jsKey("baseline", "none"))),
+				gzip: Math.max(0, requireSize(sizes, jsKey(name, "gzip")) - requireSize(sizes, jsKey("baseline", "gzip"))),
+				brotli: Math.max(0, requireSize(sizes, jsKey(name, "brotli")) - requireSize(sizes, jsKey("baseline", "brotli"))),
+			};
+
+			// A subject that weighs nothing did not get smaller; the measurement
+			// broke. Left unguarded this reads downstream as a 100% improvement and
+			// PASSES the absolute bundle gate -- a broken measurement scoring as the
+			// best possible result, which is the single worst failure mode this
+			// suite can have. Fail the run instead.
+			if (measured.raw === 0) {
+				throw new Error(
+					`bundle-size: "${name}" measured 0 bytes after baseline subtraction. ` +
+						`The lib build almost certainly did not emit the intended entry.`,
+				);
+			}
+
+			return measured;
+		};
 
 		const quadrumCss = requireSize(sizes, "css:quadrum");
 		const cburnett = requireSize(sizes, "css:cburnett");

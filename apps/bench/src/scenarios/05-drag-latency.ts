@@ -38,7 +38,9 @@ const DRAG_STEP_MS = 8;
  * Nothing here crosses the runner boundary, so the IPC cost of driving real
  * input stays out of the measurement.
  */
-function observeInputHandling(): { samples: number[]; stop: () => void } {
+function observeInputHandling(
+	target: Window,
+): { samples: number[]; stop: () => void } {
 	const samples: number[] = [];
 
 	const onInput = (): void => {
@@ -50,14 +52,14 @@ function observeInputHandling(): { samples: number[]; stop: () => void } {
 	};
 
 	for (const type of INPUT_EVENTS) {
-		window.addEventListener(type, onInput, { capture: true });
+		target.addEventListener(type, onInput, { capture: true });
 	}
 
 	return {
 		samples,
 		stop(): void {
 			for (const type of INPUT_EVENTS) {
-				window.removeEventListener(type, onInput, { capture: true });
+				target.removeEventListener(type, onInput, { capture: true });
 			}
 		},
 	};
@@ -78,7 +80,7 @@ export const dragLatencyScenario: Scenario = {
 	defaults: { sizePx: 480, iterations: 20, warmupIterations: 2, discardFirst: 5 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {
-		const { host, factory, options, signal, hooks } = ctx;
+		const { host, frame, factory, options, signal, hooks } = ctx;
 		const mouse = hooks.mouse;
 
 		if (!mouse) {
@@ -87,7 +89,7 @@ export const dragLatencyScenario: Scenario = {
 			);
 		}
 
-		const child = document.createElement("div");
+		const child = frame.document.createElement("div");
 		host.appendChild(child);
 		const adapter = factory.mount(child, {
 			placement: INITIAL_PLACEMENT,
@@ -99,7 +101,7 @@ export const dragLatencyScenario: Scenario = {
 			sizePx: options.sizePx,
 		});
 
-		const observer = observeInputHandling();
+		const observer = observeInputHandling(frame.window);
 		let dragEntered = false;
 		let draggedTransformSeen = false;
 
@@ -109,8 +111,11 @@ export const dragLatencyScenario: Scenario = {
 					throw new DOMException("aborted", "AbortError");
 				}
 
-				const from = adapter.squareCenter("e2");
-				const to = adapter.squareCenter("e4");
+				// squareCenter() is in the frame's client space; CDP input takes
+				// top-viewport coordinates. The offset is a pure translation, so
+				// interpolating the waypoints after conversion is equivalent.
+				const from = frame.toViewport(adapter.squareCenter("e2"));
+				const to = frame.toViewport(adapter.squareCenter("e4"));
 
 				await mouse("move", from.x, from.y);
 				await mouse("down", from.x, from.y);

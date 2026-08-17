@@ -4,6 +4,8 @@
  * Node-side runner can import it under type stripping.
  */
 
+import type { BenchFrame } from "./frames";
+
 export type AdapterId = "quadrum" | "chessground";
 export type BenchColor = "white" | "black";
 /** "a1".."h8". Deliberately a plain string: bench code must not depend on
@@ -152,9 +154,30 @@ export interface ScenarioRunResult {
 	readonly assertions: readonly Assertion[];
 }
 
+/**
+ * What a frame entry publishes on its own window for the parent to pick up.
+ * Same-origin, so this is read by direct property access -- nothing is
+ * serialized and no postMessage handshake is involved.
+ */
+export interface BenchFrameGlobal {
+	readonly factory: AdapterFactory;
+}
+
+/** A frame window, once its entry module has installed the contract. */
+export interface BenchFrameWindow extends Window {
+	__benchFrame?: BenchFrameGlobal;
+}
+
 export interface ScenarioContext {
 	/** A clean, empty, correctly sized host for this adapter. Never shared. */
 	readonly host: HTMLElement;
+	/**
+	 * The isolated frame this adapter lives in. Scenarios MUST create elements
+	 * with `frame.document` and attach listeners to `frame.window` rather than
+	 * reaching for the page globals -- the globals belong to the parent
+	 * document, which is not where the board is.
+	 */
+	readonly frame: BenchFrame;
 	readonly factory: AdapterFactory;
 	readonly options: ScenarioOptions;
 	log(message: string): void;

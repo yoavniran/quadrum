@@ -8,8 +8,8 @@ import { SCENARIOS, getScenario, GATED_SCENARIO_IDS } from "./scenarios/registry
 import { runComparison } from "./core/harness";
 import { readEnv, assertProductionBuild } from "./core/env";
 import { applyPieceArtParity } from "./adapters/shared/piece-art";
-import { quadrumAdapter } from "./adapters/quadrum/index";
-import { chessgroundAdapter } from "./adapters/chessground/index";
+import { ensureFrames } from "./core/frames";
+import { QUADRUM_VERSION, CHESSGROUND_VERSION } from "./adapters/versions";
 import type {
 	BenchApi,
 	BenchHooks,
@@ -50,7 +50,7 @@ export function installBenchApi(args: {
 		},
 
 		env() {
-			return readEnv(quadrumAdapter.version, chessgroundAdapter.version);
+			return readEnv(QUADRUM_VERSION, CHESSGROUND_VERSION);
 		},
 
 		setHooks(h: BenchHooks): void {
@@ -63,7 +63,11 @@ export function installBenchApi(args: {
 		): Promise<ScenarioComparison> {
 			assertProductionBuild(args.allowDev);
 
-			await applyPieceArtParity();
+			// Each subject runs in its own same-origin frame so neither
+			// library's CSS can reach the other's document. Built once and
+			// reused, which keeps ABBA interleaving free of page loads.
+			const frames = await ensureFrames(args.container);
+			await applyPieceArtParity(frames);
 
 			const scenario = getScenario(scenarioId);
 			const options: ScenarioOptions = {
@@ -75,7 +79,7 @@ export function installBenchApi(args: {
 
 			return runComparison({
 				scenario,
-				container: args.container,
+				frames,
 				options,
 				hooks,
 				signal: controller.signal,

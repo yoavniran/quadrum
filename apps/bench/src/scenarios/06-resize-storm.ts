@@ -27,10 +27,10 @@ export const resizeStormScenario: Scenario = {
 	defaults: { sizePx: 480, iterations: 50, warmupIterations: 2, discardFirst: 5 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {
-		const { host, factory, options, signal } = ctx;
+		const { host, frame, factory, options, signal } = ctx;
 
 		// Mount once
-		const child = document.createElement("div");
+		const child = frame.document.createElement("div");
 		host.appendChild(child);
 		const adapter = factory.mount(child, {
 			placement: INITIAL_PLACEMENT,

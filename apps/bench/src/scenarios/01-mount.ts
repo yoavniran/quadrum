@@ -36,14 +36,14 @@ export const mountScenario: Scenario = {
 		const assertions: Assertion[] = [];
 		let lastElementCount = 0;
 
-		const { host, factory, options, signal } = ctx;
+		const { host, frame, factory, options, signal } = ctx;
 
 		for (let i = 0; i < options.iterations; i++) {
 			if (signal.aborted) {
 				throw new DOMException("aborted", "AbortError");
 			}
 
-			const child = document.createElement("div");
+			const child = frame.document.createElement("div");
 			host.appendChild(child);
 
 			// Script timing: just the mount call

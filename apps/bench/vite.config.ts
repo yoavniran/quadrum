@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
 import { fileURLToPath } from "node:url";
 
+const page = (name: string) => fileURLToPath(new URL(name, import.meta.url));
+
 const pkg = (p: string) => fileURLToPath(new URL(`../../packages/${p}`, import.meta.url));
 
 // Cross-origin isolation unlocks 5µs performance.now() resolution; without it
@@ -40,6 +42,18 @@ export default defineConfig({
 		// The runner always drives the production build. Sourcemaps stay on so a
 		// long-task attribution can be traced back to a real function.
 		target: "esnext",
-		sourcemap: true
+		sourcemap: true,
+		rollupOptions: {
+			// Three pages, and the split is the isolation mechanism. Each frame
+			// page imports exactly ONE adapter, so Rollup emits one CSS bundle
+			// per subject and neither library's stylesheet can reach the
+			// other's document. Collapsing these back into a single entry would
+			// silently restore the shared-stylesheet contamination.
+			input: {
+				index: page("index.html"),
+				"frame-quadrum": page("frame-quadrum.html"),
+				"frame-chessground": page("frame-chessground.html")
+			}
+		}
 	}
 });

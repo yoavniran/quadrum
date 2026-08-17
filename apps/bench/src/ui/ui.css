@@ -131,3 +131,17 @@ body {
 	margin-top: 12px;
 	max-width: 80ch;
 }
+
+/*
+ * Each subject renders inside its own same-origin iframe so the two
+ * libraries' stylesheets can never share a document. The iframe is chrome,
+ * not part of the measured board, so it carries no border or padding of its
+ * own -- the measured box is the .bench-frame host inside it.
+ */
+.bench-subject-frame {
+	display: block;
+	width: 520px;
+	height: 520px;
+	border: 0;
+	background: transparent;
+}

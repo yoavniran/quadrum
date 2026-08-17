@@ -3,5 +3,11 @@ packages:
   - "apps/*"
 allowBuilds:
   esbuild: true
+# Supply-chain guard: a version has to have been on the registry for 7 days
+# (10080 minutes) before pnpm will install it, so a compromised publish has a
+# window to be caught and unpublished before it reaches this repo. Dependabot's
+# `cooldown` in .github/dependabot.yml mirrors this, otherwise its PRs would
+# propose versions pnpm then refuses to install.
+minimumReleaseAge: 10080
 minimumReleaseAgeExclude:
   - overweight@2.2.0

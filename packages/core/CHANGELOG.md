@@ -1,5 +1,29 @@
 # quadrum
 
+## [0.3.0](https://github.com/yoavniran/quadrum/compare/quadrum@0.2.2...quadrum@0.3.0) (2026-08-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* The tarballs shipped `src/` alongside `dist/`, so every module travelled twice -- once as TypeScript and once compiled, with the sourcemaps already embedding the same source a third time. `files` is now `dist` (plus core's `assets/`, which is a real published export), which takes `quadrum` from 359 kB unpacked across 81 files to 263 kB across 60, and `quadrum-react` to 28 kB across 11. Sourcemaps keep their embedded `sourcesContent`, so stepping into the original TypeScript still works.
+
+### Performance
+
+* **core:** compare against a written-value record, not the DOM ([#38](https://github.com/yoavniran/quadrum/issues/38)) ([2861ef4](https://github.com/yoavniran/quadrum/commit/2861ef4b596c67e8e253261a0bca156702dc4876))
+* **core:** cut per-update allocations on the position path ([#46](https://github.com/yoavniran/quadrum/issues/46)) ([b51c911](https://github.com/yoavniran/quadrum/commit/b51c9113268e91ebc8a2ea5fc2e2b48f2855df3c))
+* **core:** hand off mark nodes and own gradients per shaft ([#49](https://github.com/yoavniran/quadrum/issues/49)) ([a3deaa9](https://github.com/yoavniran/quadrum/commit/a3deaa9ae5d9251ca50a3cc6e4a177bff8006e1b))
+* **core:** pool highlight squares instead of churning them ([#33](https://github.com/yoavniran/quadrum/issues/33)) ([f880f7f](https://github.com/yoavniran/quadrum/commit/f880f7f98854d72c5618427c7b921d921d9d6a39))
+* **core:** recycle mark nodes and pool fade gradients ([#42](https://github.com/yoavniran/quadrum/issues/42)) ([cbf9bbe](https://github.com/yoavniran/quadrum/commit/cbf9bbe984bca16ffdf13e5cbe4be3ac77533af3))
+* **core:** render only the layers a mutation dirtied ([#28](https://github.com/yoavniran/quadrum/issues/28)) ([0ba3865](https://github.com/yoavniran/quadrum/commit/0ba3865382705bc25cdd73ba8202e5beac8e37c8))
+* **core:** reuse piece elements across a move ([#31](https://github.com/yoavniran/quadrum/issues/31)) ([9c4ac08](https://github.com/yoavniran/quadrum/commit/9c4ac081ffe9f53db8e6e60f4601b8288b33ccc2))
+* **core:** shrink the render-parts table to fit the bundle gate ([#40](https://github.com/yoavniran/quadrum/issues/40)) ([53828f7](https://github.com/yoavniran/quadrum/commit/53828f7b3d0a90f9be1213f09e37216ce2997746))
+* **core:** skip redundant work on the coords, pieces and marks paths ([#20](https://github.com/yoavniran/quadrum/issues/20)) ([e1130fc](https://github.com/yoavniran/quadrum/commit/e1130fc1b1c65162ea4cea918f2d78e4338a765c))
+
+
+### CI
+
+* replace changesets with release-please ([#54](https://github.com/yoavniran/quadrum/issues/54)) ([318da5d](https://github.com/yoavniran/quadrum/commit/318da5d60211d4fda192959ed647ed122cceead9))
+
 ## 0.2.2
 
 ### Patch Changes

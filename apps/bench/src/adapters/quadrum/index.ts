@@ -15,17 +15,15 @@ import type {
 	BenchSquare,
 } from "../../core/types";
 import { squareFraction } from "../../data/squares";
-
-const VERSION = "0.2.2";
+import { QUADRUM_VERSION } from "../versions";
 
 /**
  * quadrum adapter factory.
- * Version mirrors packages/core/package.json.
  */
 export const quadrumAdapter: AdapterFactory = {
 	id: "quadrum",
 	label: "quadrum",
-	version: VERSION,
+	version: QUADRUM_VERSION,
 
 	mount(host: HTMLElement, options: MountOptions): BoardAdapter {
 		host.style.width = `${options.sizePx}px`;

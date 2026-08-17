@@ -95,6 +95,43 @@ than merely discouraged: the page API refuses to run under `import.meta.env.DEV`
 
 Scenarios 1–4 and 6 replay 200 half-moves from three real classical games: Kasparov–Topalov 1999 (87 moves), Kasparov–Morozevich 2001 (86 moves, including promotions and castling), and the first 27 moves of Karpov–Kasparov 1990. Real games provide realistic piece displacements, capture cadence, and special moves — far better than a synthetic seeded generator that produced teleporting pieces and no castling or promotion in the workload. `apps/bench/scripts/generate-game-data.mjs` regenerates the position set from `source-games.pgn` when needed.
 
+### Subject isolation
+
+Each library runs inside its **own same-origin iframe**, loaded from its own page
+(`frame-quadrum.html`, `frame-chessground.html`). Each frame page imports exactly one adapter and
+therefore exactly one library's CSS — Vite emits a separate CSS bundle per frame, so the two
+stylesheets are not merely unmatched in the other's document, they are **absent** from it.
+
+This exists because style recalc and selector matching are per-document. On a shared page, adding
+or changing one library's stylesheet can move the *other's* measured cost, which makes the
+comparison unfair in a way no assertion would catch. Separate documents make that structurally
+impossible rather than merely unlikely.
+
+Running the adapter *inside* the frame — rather than only parking its host element there — also
+matters: both libraries create elements with the global `document`. If only the host lived in the
+frame, every new piece would be created in the parent document and adopted on insert, which is
+work no real consumer does.
+
+Two alternatives were rejected:
+
+- **Separate pages per subject**, or reloading between them. This breaks the ABBA interleaving that
+  the comparison depends on. If the subjects are measured at different times, monotonic drift
+  (thermal, GC ramp, a neighbouring process) stops loading equally on both, trading a contamination
+  risk for a drift bias — a worse trade, and a directional one.
+- **Tearing down stylesheets between subjects.** Removing a stylesheet forces a full-document
+  restyle whose cost lands on whatever runs next, and it is easy to get subtly wrong in a way that
+  favours the second subject.
+
+Because both frames stay alive simultaneously, interleaving keeps its tight cadence: no page loads
+and no stylesheet churn in the middle of a measurement. Same-origin means the parent drives each
+adapter by direct property access — nothing is serialized — and `performance.now()` is one shared
+timebase across both frames, so the clock is unchanged.
+
+Two consequences worth knowing when editing scenarios: create elements with `ctx.frame.document`
+and attach listeners to `ctx.frame.window`, never the page globals; and `getBoundingClientRect()`
+inside a frame is relative to *that frame's* viewport, so anything driving real browser input must
+convert through `ctx.frame.toViewport()` (CDP takes top-viewport coordinates).
+
 ### Piece-art parity
 
 quadrum ships structural CSS only; the demo app paints pieces as Unicode glyphs sized in `cqw`.
@@ -102,11 +139,19 @@ Glyph shaping and SVG-background rasterisation are different work, and the `cqw`
 32 text runs on every resize — a cost chessground never pays, which would produce a
 **wrong-signed** result on scenario 6.
 
-So one shared `src/adapters/shared/piece-art.css` paints the same art on both `qd-piece` and
-`cg-piece`, and the demo's chrome is never imported. `guards.assertParity()` then checks, before
-every timed region, that the computed `background-size` on a sampled piece is identical on both
-boards, that piece counts match, that the board rects agree within 0.5px, and that coordinates are
-off on both.
+So `src/adapters/shared/piece-art.ts` gives quadrum chessground's art at runtime, and the demo's
+chrome is never imported. No chessground bytes are committed: the art is read from the installed
+dev-only dependency. Under subject isolation the probe runs **in chessground's own frame**, where
+its stylesheet lives, and only the derived `background-image` declarations are injected into
+quadrum's frame — so quadrum's document still never receives chessground's stylesheet.
+
+> **Known gap — this guardrail is not currently armed.** `guards.assertParity()` is written and
+> exported but **never called**, so the per-timed-region parity checks it describes (identical
+> computed `background-size` on a sampled piece, matching piece counts, board rects within 0.5px,
+> coordinates off on both) do **not** run today. Piece-art parity has been verified by hand — both
+> boards' pieces resolve to the same base64 SVG art at `background-size: contain` — but "verified
+> once by hand" is not the same as "asserted on every run", and it would be dishonest to
+> describe it as if it were. Wiring `assertParity` into the harness is open work.
 
 Comparing each library "as it ships" was rejected: it measures *themes*, and quadrum has no theme,
 so it would compare chessground against CSS I wrote. The shipped-CSS question is real, and it is a
@@ -411,6 +456,7 @@ distribution is visible to anyone who looks.
 src/core/       harness, clock, stats, parity guards, env
 src/adapters/   quadrum/ · chessground/ · shared/ (parity CSS)
 src/scenarios/  registry + one file per scenario
+src/frames/     boot + one entry per subject frame (the isolation boundary)
 src/ui/         the visual page
 src/bench-api.ts   window.__bench = { list, run, env } -- the only runner contract
 runner/         Playwright + CDP driver, bundle sizing (overweight), console report

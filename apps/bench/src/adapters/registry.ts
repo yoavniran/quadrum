@@ -1,39 +1,16 @@
 /**
- * Registry of all board adapters.
+ * Adapter metadata for the parent page.
+ *
+ * This file deliberately imports NO adapter module. Each adapter is loaded by
+ * its own frame (see src/frames/), and importing one here would pull that
+ * library's code and stylesheet back into the parent bundle -- which is
+ * exactly the coupling the frame isolation exists to remove. The parent gets
+ * the live factories from `ensureFrames()`, never from here.
  */
 
-import { quadrumAdapter } from "./quadrum/index";
-import { chessgroundAdapter } from "./chessground/index";
-import type { AdapterFactory, AdapterId } from "../core/types";
+import type { AdapterId } from "../core/types";
 
-import "./shared/board-frame.css";
-
-/**
- * All available adapters.
- */
-export const ADAPTERS: readonly AdapterFactory[] = [
-	quadrumAdapter,
-	chessgroundAdapter,
-];
-
-/**
- * All available adapter IDs.
- */
-export const ADAPTER_IDS: readonly AdapterId[] = ADAPTERS.map((a) => a.id);
-
-/**
- * Get an adapter by ID.
- * Throws an Error if the ID is not found.
- */
-export function getAdapter(id: AdapterId): AdapterFactory {
-	const adapter = ADAPTERS.find((a) => a.id === id);
-	if (!adapter) {
-		throw new Error(
-			`unknown adapter: ${id}. Known: ${ADAPTER_IDS.join(", ")}`,
-		);
-	}
-	return adapter;
-}
+export const ADAPTER_IDS: readonly AdapterId[] = ["quadrum", "chessground"];
 
 /**
  * Default order of adapters for interleaving.

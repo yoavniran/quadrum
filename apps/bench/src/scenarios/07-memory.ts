@@ -32,7 +32,7 @@ export const memoryScenario: Scenario = {
 	defaults: { sizePx: 480, iterations: 25, warmupIterations: 0, discardFirst: 0 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {
-		const { host, factory, options, hooks, signal } = ctx;
+		const { host, frame, factory, options, hooks, signal } = ctx;
 
 		// Check if hooks are available
 		if (!hooks.collectGarbage || !hooks.heapUsed || !hooks.domCounters) {
@@ -55,7 +55,7 @@ export const memoryScenario: Scenario = {
 					throw new DOMException("aborted", "AbortError");
 				}
 
-				const child = document.createElement("div");
+				const child = frame.document.createElement("div");
 				host.appendChild(child);
 				const adapter = factory.mount(child, {
 					placement: INITIAL_PLACEMENT,

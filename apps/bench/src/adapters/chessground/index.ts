@@ -23,15 +23,15 @@ import type {
 	BenchSquare,
 } from "../../core/types";
 import { squareFraction } from "../../data/squares";
+import { CHESSGROUND_VERSION } from "../versions";
 
 /**
  * chessground adapter factory.
- * Version mirrors the exact pin in package.json.
  */
 export const chessgroundAdapter: AdapterFactory = {
 	id: "chessground",
 	label: "chessground",
-	version: "10.1.1",
+	version: CHESSGROUND_VERSION,
 
 	mount(host: HTMLElement, options: MountOptions): BoardAdapter {
 		host.style.width = `${options.sizePx}px`;

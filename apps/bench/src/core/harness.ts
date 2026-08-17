@@ -4,7 +4,9 @@
 
 import { summarize, ratio } from "./stats";
 import { settle } from "./clock";
-import { getAdapter, DEFAULT_ORDER } from "../adapters/registry";
+import { DEFAULT_ORDER } from "../adapters/registry";
+import { getFrame } from "./frames";
+import type { BenchFrame, BenchFrames } from "./frames";
 import type {
 	Scenario,
 	ScenarioOptions,
@@ -35,11 +37,14 @@ export function abbaOrder(reps: number, ids: readonly AdapterId[]): AdapterId[] 
 /**
  * Create a clean host element with the given size.
  */
-export function makeHost(container: HTMLElement, sizePx: number): HTMLElement {
-	const host = document.createElement("div");
+export function makeHost(frame: BenchFrame, sizePx: number): HTMLElement {
+	// Allocated in the subject's OWN document. Creating it in the parent and
+	// inserting it here would force a cross-document adoption of every element
+	// the library later appends -- work no real consumer does.
+	const host = frame.document.createElement("div");
 	host.className = "bench-frame";
 	host.style.setProperty("--bench-size", `${sizePx}px`);
-	container.appendChild(host);
+	frame.document.body.appendChild(host);
 	return host;
 }
 
@@ -165,13 +170,13 @@ export function mergePassResults(
  */
 export async function runComparison(args: {
 	scenario: Scenario;
-	container: HTMLElement;
+	frames: BenchFrames;
 	options: ScenarioOptions;
 	hooks: BenchHooks;
 	signal: AbortSignal;
 	log: (m: string) => void;
 }): Promise<ScenarioComparison> {
-	const { scenario, container, options, hooks, signal, log } = args;
+	const { scenario, frames, options, hooks, signal, log } = args;
 
 	const startTime = performance.now();
 	const passes: Map<AdapterId, ScenarioRunResult[]> = new Map();
@@ -183,11 +188,12 @@ export async function runComparison(args: {
 		if (signal.aborted) {
 			throw new DOMException("aborted", "AbortError");
 		}
-		const factory = getAdapter(id);
-		const host = makeHost(container, options.sizePx);
+		const frame = getFrame(frames, id);
+		const host = makeHost(frame, options.sizePx);
 		const ctx: ScenarioContext = {
 			host,
-			factory,
+			frame,
+			factory: frame.factory,
 			options,
 			log,
 			signal,
@@ -211,11 +217,12 @@ export async function runComparison(args: {
 		if (signal.aborted) {
 			throw new DOMException("aborted", "AbortError");
 		}
-		const factory = getAdapter(id);
-		const host = makeHost(container, options.sizePx);
+		const frame = getFrame(frames, id);
+		const host = makeHost(frame, options.sizePx);
 		const ctx: ScenarioContext = {
 			host,
-			factory,
+			frame,
+			factory: frame.factory,
 			options,
 			log,
 			signal,

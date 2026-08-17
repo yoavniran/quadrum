@@ -36,8 +36,10 @@ export function assertParity(a: BoardAdapter, b: BoardAdapter): Assertion[] {
 	const aPieceEl = a.pieceElements()[0];
 	const bPieceEl = b.pieceElements()[0];
 	if (aPieceEl && bPieceEl) {
-		const aStyle = getComputedStyle(aPieceEl);
-		const bStyle = getComputedStyle(bPieceEl);
+		// Each subject lives in its own frame, so resolve computed style
+		// through the element's OWN view rather than the parent's.
+		const aStyle = styleOf(aPieceEl);
+		const bStyle = styleOf(bPieceEl);
 		const aSize = aStyle.backgroundSize;
 		const bSize = bStyle.backgroundSize;
 		assertions.push({
@@ -94,4 +96,17 @@ export function countAssertion(
  */
 export function allPassed(assertions: readonly Assertion[]): boolean {
 	return assertions.every((a) => a.passed);
+}
+
+/**
+ * Computed style resolved via the element's own document view.
+ * Elements live in per-subject frames; the parent's `getComputedStyle` is the
+ * wrong window for them.
+ */
+function styleOf(el: Element): CSSStyleDeclaration {
+	const view = el.ownerDocument.defaultView;
+	if (!view) {
+		throw new Error("element has no defaultView; cannot resolve style");
+	}
+	return view.getComputedStyle(el);
 }

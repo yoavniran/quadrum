@@ -35,13 +35,13 @@ export const updateAnimOnScenario: Scenario = {
 	defaults: { sizePx: 480, iterations: 100, warmupIterations: 1, discardFirst: 10 },
 
 	async run(ctx: ScenarioContext): Promise<ScenarioRunResult> {
-		const { host, factory, options, signal } = ctx;
+		const { host, frame, factory, options, signal } = ctx;
 
 		// Measure frame interval first
 		const frameIntervalMs = await measureFrameInterval();
 
 		// Mount once with animation on
-		const child = document.createElement("div");
+		const child = frame.document.createElement("div");
 		host.appendChild(child);
 		const adapter = factory.mount(child, {
 			placement: INITIAL_PLACEMENT,

@@ -31,6 +31,9 @@ export default defineConfig({
 		// "quadrum" entry must come last or it swallows every subpath above it.
 		alias: {
 			"quadrum/assets/quadrum.css": pkg("core/assets/quadrum.css"),
+			// The manifest, so the reported subject version is derived from the
+			// package being measured rather than hand-copied into a constant.
+			"quadrum/package.json": pkg("core/package.json"),
 			"quadrum/fen": pkg("core/src/fen.ts"),
 			"quadrum/mobility": pkg("core/src/mobility.ts"),
 			"quadrum/premove": pkg("core/src/premove.ts"),

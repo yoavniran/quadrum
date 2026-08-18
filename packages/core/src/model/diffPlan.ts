@@ -1,5 +1,5 @@
 import type { Piece, Pieces, Square } from "../types";
-import { ALL_SQUARES, fileIndex, rankIndex } from "./squares";
+import { fileIndex, rankIndex, squareIndex } from "./squares";
 
 export interface AnimMove {
 	piece: Piece;
@@ -68,11 +68,11 @@ export function planDiff(before: Pieces, after: Pieces, opts?: PlanOptions): Ani
 
 	for (const vanishedSq of vanished) {
 		const vanishedPiece = before.get(vanishedSq)!;
-		const vanishedIdx = ALL_SQUARES.indexOf(vanishedSq);
+		const vanishedIdx = squareIndex(vanishedSq);
 
 		for (const appearedSq of appeared) {
 			const appearedPiece = after.get(appearedSq)!;
-			const appearedIdx = ALL_SQUARES.indexOf(appearedSq);
+			const appearedIdx = squareIndex(appearedSq);
 
 			if (vanishedPiece.color === appearedPiece.color && vanishedPiece.role === appearedPiece.role) {
 				const vf = fileIndex(vanishedSq);

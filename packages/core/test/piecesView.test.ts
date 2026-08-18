@@ -1,4 +1,4 @@
-import { renderPieces, pieceOf, createPieceEl } from "../src/view/piecesView";
+import { renderPieces, pieceOf, createPieceEl, isHeld, markHeld } from "../src/view/piecesView";
 import { defaultState, applyOptions } from "../src/options";
 import type { Square, Piece } from "../src/types";
 
@@ -39,7 +39,7 @@ describe("renderPieces", () => {
 		const els = new Map<Square, HTMLElement>();
 
 		render(board, els, "8/8/8/8/8/8/4P3/8");
-		els.get("e2")!.classList.add("held");
+		markHeld(els.get("e2")!, true);
 
 		render(board, els, "8/8/8/8/8/8/4n3/8");
 		expect(board.querySelector("qd-piece.held")).not.toBeNull();
@@ -51,7 +51,7 @@ describe("renderPieces", () => {
 
 		render(board, els, "8/8/8/8/8/8/4P3/8");
 		const held = els.get("e2")!;
-		held.classList.add("held");
+		markHeld(held, true);
 
 		// Any redraw during a drag -- an engine tick, a hover, a mark -- used to
 		// build a second element for the held square and overwrite the map entry
@@ -166,5 +166,27 @@ describe("renderPieces", () => {
 		const el = document.createElement("qd-piece");
 		const resolved = pieceOf(el);
 		expect(resolved).toBeNull();
+	});
+});
+
+describe("isHeld fast path", () => {
+	it("a fresh element reads not-held without consulting classList", () => {
+		const el = createPieceEl({ color: "white", role: "pawn" });
+		const contains = vi.spyOn(el.classList, "contains");
+
+		expect(isHeld(el)).toBe(false);
+		expect(contains).not.toHaveBeenCalled();
+
+		contains.mockRestore();
+	});
+
+	// cloneNode does not copy the symbol flag, so a clone must fall back to the
+	// class -- the documented escape hatch for elements this library never built.
+	it("a cloned element carrying the held class still reads held", () => {
+		const el = createPieceEl({ color: "white", role: "pawn" });
+		el.classList.add("held");
+		const clone = el.cloneNode(true) as HTMLElement;
+
+		expect(isHeld(clone)).toBe(true);
 	});
 });

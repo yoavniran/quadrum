@@ -1,5 +1,6 @@
 import type { Piece, Square } from "../src/types";
-import { createPieceEl, markHeld, pieceOf, renderPieces } from "../src/view/piecesView";
+import { createPieceEl, markHeld, pieceOf, placePieceAtPoint, renderPieces } from "../src/view/piecesView";
+import { setTransform } from "../src/view/placement";
 import { defaultState } from "../src/options";
 import { fenToPieces } from "../src/model/position";
 
@@ -190,7 +191,7 @@ describe("piecesView reuse and registry", () => {
 
 			const heldEl = els.get("e2");
 			expect(heldEl).toBeDefined();
-			heldEl!.classList.add("held");
+			markHeld(heldEl!, true);
 
 			// Move the pawn e2 -> e4 while holding it
 			const afterMove = defaultState();
@@ -248,6 +249,77 @@ describe("piecesView reuse and registry", () => {
 
 			expect(els.has("e2")).toBe(false);
 			expect(el.parentNode).toBeNull();
+		});
+	});
+
+	// W1 converts "a survivor element mapped at square S is visually at S" from
+	// an incidental truth into a load-bearing one: the placement epoch skips the
+	// whole placement chain for survivors, so every path that moves an element
+	// out of band (drag, animation) must invalidate the record for the next
+	// render to correct it.
+	describe("placement epoch", () => {
+		it("a position update that moves one piece writes a transform on exactly one element", async () => {
+			const state = defaultState();
+			state.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
+
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			const mutations: MutationRecord[] = [];
+			const observer = new MutationObserver((records) => {
+				mutations.push(...records);
+			});
+			observer.observe(board, { attributes: true, attributeFilter: ["style"], subtree: true });
+
+			const afterMove = defaultState();
+			afterMove.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR");
+			renderPieces(board, els, afterMove);
+
+			await Promise.resolve();
+			observer.disconnect();
+
+			const touched = new Set(mutations.map((m) => m.target));
+			expect(touched.size).toBe(1);
+			expect(touched.has(els.get("e4")!)).toBe(true);
+		});
+
+		it("an out-of-band setTransform is corrected by the next render", () => {
+			const state = defaultState();
+			state.pieces = fenToPieces("4k3/8/8/8/8/8/4P3/4K3");
+
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			const el = els.get("e2")!;
+			const settled = el.style.transform;
+
+			setTransform(el, "translate(0%, 0%)");
+			renderPieces(board, els, state);
+
+			expect(el.style.transform).toBe(settled);
+		});
+
+		it("a released drag is re-placed by the next render", () => {
+			const state = defaultState();
+			state.pieces = fenToPieces("4k3/8/8/8/8/8/4P3/4K3");
+
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			const el = els.get("e2")!;
+			const settled = el.style.transform;
+
+			// Mid-drag: held, positioned against the pointer, skipped by renders.
+			markHeld(el, true);
+			placePieceAtPoint(el, { x: 3.5, y: 3.5 });
+			renderPieces(board, els, state);
+			expect(el.style.transform).not.toBe(settled);
+
+			// Release: the drag write cleared the record's epoch, so the next
+			// render must run the full placement chain and put it back.
+			markHeld(el, false);
+			renderPieces(board, els, state);
+			expect(el.style.transform).toBe(settled);
 		});
 	});
 

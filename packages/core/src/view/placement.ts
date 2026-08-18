@@ -10,6 +10,13 @@ export interface Placement {
 	 *  and compares false against everything, so the first write always lands. */
 	tx: number;
 	ty: number;
+	/** Which placement era last placed this element through placeSquare. 0 means
+	 *  "not render-placed": never placed, or invalidated by an out-of-band
+	 *  transform write (drag, animation). Board eras start at 1, so 0 never
+	 *  matches and the full guarded chain runs. This is what lets the piece pass
+	 *  skip survivors without *assuming* nothing moved them out of band -- any
+	 *  write that bypasses placeSquare clears it. */
+	epoch: number;
 }
 
 // Kept on the element under a private symbol rather than in a module-level
@@ -28,7 +35,7 @@ function recordFor(el: HTMLElement): Placement {
 	const carrier = el as HTMLElement & RecordCarrier;
 	let record = carrier[RECORD];
 	if (!record) {
-		record = { square: null, transform: null, tx: NaN, ty: NaN };
+		record = { square: null, transform: null, tx: NaN, ty: NaN, epoch: 0 };
 		carrier[RECORD] = record;
 	}
 	return record;
@@ -70,6 +77,7 @@ export function setTransform(el: HTMLElement, transform: string): void {
 	// compare equal and skip a write the element genuinely needs.
 	record.tx = NaN;
 	record.ty = NaN;
+	record.epoch = 0;
 }
 
 /**
@@ -97,6 +105,10 @@ function writeTranslate(el: HTMLElement, record: Placement, x: number, y: number
 	// Keep the string form authoritative too, so a setTransform writing the same
 	// translate is still elided.
 	record.transform = transform;
+	// A translate that landed outside placeSquare (drag positioning) means the
+	// element is no longer where the last render put it; placeSquare re-stamps
+	// its own epoch right after this on the render path.
+	record.epoch = 0;
 }
 
 /**
@@ -106,8 +118,23 @@ function writeTranslate(el: HTMLElement, record: Placement, x: number, y: number
  * the two single-purpose functions looked the record up twice for the same
  * element -- 64 lookups an update on the piece pass, half of them redundant.
  */
-export function placeSquare(el: HTMLElement, square: string, x: number, y: number): void {
+export function placeSquare(el: HTMLElement, square: string, x: number, y: number, epoch = 0): void {
 	const record = recordFor(el);
 	writeSquareAttr(el, record, square);
 	writeTranslate(el, record, x, y);
+	// Stamped last, so it overrides the invalidation writeTranslate just did:
+	// this placement went through the render path and is trustworthy until an
+	// out-of-band write or an era bump says otherwise.
+	record.epoch = epoch;
+}
+
+/**
+ * True when `el` was placed at `square` by the render path during the given
+ * placement era -- the precondition for skipping placePieceEl entirely. Two
+ * comparisons against one property read, versus the six-function chain the
+ * skip elides.
+ */
+export function isPlacedAt(el: HTMLElement, square: string, epoch: number): boolean {
+	const record = (el as HTMLElement & RecordCarrier)[RECORD];
+	return record !== undefined && record.epoch === epoch && record.square === square;
 }

@@ -1,7 +1,7 @@
 import type { Piece, Role, Square, Color, Point } from "../types";
 import type { BoardState } from "../options";
-import { ALL_SQUARES, fileIndex, rankIndex } from "../model/squares";
-import { placeSquare, setTranslate } from "./placement";
+import { fileIndex, rankIndex, squareIndex } from "../model/squares";
+import { isPlacedAt, placeSquare, setTranslate } from "./placement";
 
 const ROLES: readonly string[] = ["king", "queen", "rook", "bishop", "knight", "pawn"];
 
@@ -35,6 +35,24 @@ interface PieceCarrier {
 const HELD = Symbol("quadrum.held");
 const ALIVE = Symbol("quadrum.alive");
 
+// The board's placement era, kept on the board element. A survivor whose record
+// carries the current era's epoch is provably already placed -- skipping it
+// elides the whole fileIndex/rankIndex/placeSquare chain, which is the single
+// largest cost of an anim-off update. The era bumps on anything that
+// invalidates placement wholesale (today: an orientation flip), and individual
+// elements fall out of it whenever a transform is written outside placeSquare.
+// Eras start at 1 so a fresh record (epoch 0) never reads as placed.
+const ERA = Symbol("quadrum.placementEra");
+
+interface Era {
+	epoch: number;
+	orientation: Color;
+}
+
+interface EraCarrier {
+	[ERA]?: Era;
+}
+
 interface FlagCarrier {
 	[HELD]?: boolean;
 	[ALIVE]?: number;
@@ -61,6 +79,12 @@ export function createPieceEl(piece: Piece): HTMLElement {
 	const el = document.createElement("qd-piece");
 	el.classList.add(piece.color, piece.role);
 	el.dataset.piece = `${piece.color}-${piece.role}`;
+	// Initialised, not lazily discovered: without this every isHeld on a board
+	// that never drags falls through to classList.contains -- a cross-binding
+	// DOM call per piece per render that always answers false. The classList
+	// fallback still covers elements this constructor never saw (cloneNode does
+	// not copy symbols).
+	(el as HTMLElement & FlagCarrier)[HELD] = false;
 	remember(el, piece);
 	return el;
 }
@@ -100,7 +124,7 @@ export function pieceOf(el: HTMLElement): Piece | null {
 // Inlined rather than calling squareToPoint, which returns a fresh {x, y} that
 // is read twice and dropped. This runs once per piece per render, so the object
 // was 32 allocations an update for two numbers.
-export function placePieceEl(el: HTMLElement, square: Square, orientation: Color, offset?: Point): void {
+export function placePieceEl(el: HTMLElement, square: Square, orientation: Color, offset?: Point, epoch = 0): void {
 	const file = fileIndex(square);
 	const rank = rankIndex(square);
 	const white = orientation === "white";
@@ -110,6 +134,7 @@ export function placePieceEl(el: HTMLElement, square: Square, orientation: Color
 		square,
 		(white ? file : 7 - file) + (offset?.x ?? 0),
 		(white ? 7 - rank : rank) + (offset?.y ?? 0),
+		epoch,
 	);
 }
 
@@ -128,6 +153,19 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 	const tick = ++renderTick;
 	const needed: Square[] = [];
 	let survivors = 0;
+
+	const carrier = board as HTMLElement & EraCarrier;
+	let era = carrier[ERA];
+	if (!era) {
+		era = { epoch: 1, orientation: state.orientation };
+		carrier[ERA] = era;
+	} else if (era.orientation !== state.orientation) {
+		// Every placement on the board is stale at once; a bump beats walking
+		// the elements to clear their records one by one.
+		era.epoch++;
+		era.orientation = state.orientation;
+	}
+	const epoch = era.epoch;
 
 	// PASS 1: Survivors. For each piece in state, if the square already has
 	// an element with a matching piece, keep it. Skip held elements.
@@ -153,12 +191,16 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 			// ones. The field comparison still has to follow, for elements whose
 			// piece was reconstructed from the DOM by pieceOf's fallback.
 			if (occupant === piece || (occupant && occupant.color === piece.color && occupant.role === piece.role)) {
-				// The survivor keeps its element. Write only what actually differs:
-				// an unconditional write costs a style recalc per piece per render,
-				// which is the whole point of this pass. The comparison is made against
-				// a JS-side record rather than by reading the DOM back. An orientation
-				// flip moves every piece without any of them changing square.
-				placePieceEl(existing, square, state.orientation);
+				// The survivor keeps its element, and usually its placement too:
+				// it was fetched by square, so unless the era moved on (orientation
+				// flip) or something wrote its transform out of band (drag,
+				// animation -- both clear the record's epoch), it is already
+				// exactly where it belongs and the whole placement chain can be
+				// skipped. The comparison is made against a JS-side record rather
+				// than by reading the DOM back.
+				if (!isPlacedAt(existing, square, epoch)) {
+					placePieceEl(existing, square, state.orientation, undefined, epoch);
+				}
 				(existing as HTMLElement & FlagCarrier)[ALIVE] = tick;
 				survivors++;
 				continue;
@@ -212,12 +254,12 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 	for (const [vacatedSq, vacatedEl] of vacated) {
 		const vacatedPiece = pieceOf(vacatedEl);
 		if (!vacatedPiece) continue;
-		const vacatedIdx = ALL_SQUARES.indexOf(vacatedSq);
+		const vacatedIdx = squareIndex(vacatedSq);
 
 		for (const neededSq of needed) {
 			const neededPiece = state.pieces.get(neededSq);
 			if (!neededPiece) continue;
-			const neededIdx = ALL_SQUARES.indexOf(neededSq);
+			const neededIdx = squareIndex(neededSq);
 
 			if (
 				vacatedPiece.color === neededPiece.color &&
@@ -286,7 +328,7 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 	}
 
 	for (const move of moves) {
-		placePieceEl(move.el, move.to, state.orientation);
+		placePieceEl(move.el, move.to, state.orientation, undefined, epoch);
 		els.set(move.to, move.el);
 	}
 
@@ -295,7 +337,7 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 			const piece = state.pieces.get(neededSq);
 			if (piece) {
 				const newEl = createPieceEl(piece);
-				placePieceEl(newEl, neededSq, state.orientation);
+				placePieceEl(newEl, neededSq, state.orientation, undefined, epoch);
 				board.appendChild(newEl);
 				els.set(neededSq, newEl);
 			}

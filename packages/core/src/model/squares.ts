@@ -38,6 +38,15 @@ export function rankIndex(square: Square): number {
 	return square.charCodeAt(1) - 49; // '1'
 }
 
+// The ordinal of a square in ALL_SQUARES (file-major), computed instead of
+// scanned. ALL_SQUARES.indexOf is a linear walk over 64 strings and the diff
+// matchers call it per vacated x per needed pair. Malformed input was already
+// undefined behaviour there (indexOf answered -1), so nothing well-defined
+// changes.
+export function squareIndex(square: Square): number {
+	return fileIndex(square) * 8 + rankIndex(square);
+}
+
 export function squareAt(file: number, rank: number): Square | null {
 	if (file < 0 || file > 7 || rank < 0 || rank > 7) return null;
 	return ALL_SQUARES[file * 8 + rank];

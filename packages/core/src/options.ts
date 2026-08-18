@@ -1,5 +1,5 @@
 import type { Color, Mark, MovePair, Pen, Pens, Square } from "./types";
-import { fenToPieces } from "./model/position";
+import { clonePieces, fenToPieces } from "./model/position";
 import type { Pieces, Targets } from "./types";
 import type {
 	MovePlayedHandler,
@@ -55,7 +55,11 @@ export interface PromotionOptions {
 }
 
 export interface BoardOptions {
-	position?: string;
+	/** FEN placement field, or an already-parsed Pieces map. A caller that holds
+	 *  the position structurally (an engine, a game model) can hand the map in
+	 *  directly and skip the FEN round-trip entirely; the map is cloned, so the
+	 *  caller keeps ownership of what it passed. */
+	position?: string | Pieces;
 	orientation?: Color;
 	sideToMove?: Color;
 	checkSide?: Color | Square | null;
@@ -163,7 +167,11 @@ export function applyOptions(state: BoardState, options: BoardOptions): BoardSta
 		// A supplied position replaces the map wholesale, so cloning first would
 		// build all 32 entries only to drop them -- and a position is supplied on
 		// every ordinary update, which is where that waste is actually paid.
-		pieces: options.position !== undefined ? fenToPieces(options.position) : new Map(state.pieces),
+		pieces: options.position === undefined
+			? new Map(state.pieces)
+			: typeof options.position === "string"
+				? fenToPieces(options.position)
+				: clonePieces(options.position),
 		// Each group is cloned only when the bag actually carries it, because
 		// every group below is written exclusively inside its own
 		// `options.<group> !== undefined` guard -- an untouched group is never

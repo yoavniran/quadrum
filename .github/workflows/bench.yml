@@ -46,14 +46,13 @@ on:
   workflow_dispatch:
     inputs:
       repetitions:
-        # 15 matches the nightly -- the run that is publishable and feeds the
+        # 31 matches the nightly -- the run that is publishable and feeds the
         # README -- because most dispatches are "show me where we stand", and at
         # 31 that answer costs the better part of an hour for confidence
-        # intervals that were already degenerate at 15. Minting a baseline is the
-        # exception, not the default: type 31 for that one.
+        # intervals that were already degenerate at 31.
         description: "Repetitions (type 31 when minting a baseline)"
         required: false
-        default: "15"
+        default: "31"
       mint_baseline:
         # Opt-in, and still merged by a human. The rule the README states is "no
         # auto-rebaselining bot", because a gate that records whatever happened is
@@ -181,7 +180,7 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ] || [ "${{ github.event_name }}" = "push" ]; then
             pnpm bench --scenario gated --runs 7
           else
-            pnpm bench --runs "${{ github.event.inputs.repetitions || 15 }}"
+            pnpm bench --runs "${{ github.event.inputs.repetitions || 31 }}"
           fi
 
       # always(): the raw JSON is the evidence, and it is most wanted precisely
@@ -430,8 +429,6 @@ jobs:
 
             - Every changed ratio needs a sentence saying why it moved. A ratio that moved for a
               reason nobody can state is a regression being recorded rather than fixed.
-            - Confirm the repetitions were high enough. 15 is right for "show me where we stand";
-              a baseline every later run is measured against wants 31.
             - If this PR is paired with a change under `packages/*/src`, it needs the
               `bench-rebaseline` label, and a reviewer should read the source diff and the ratio
               diff together — that pairing is the single diff no other check in the repo can see.

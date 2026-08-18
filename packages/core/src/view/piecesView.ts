@@ -1,7 +1,7 @@
 import type { Piece, Role, Square, Color, Point } from "../types";
 import type { BoardState } from "../options";
 import { fileIndex, rankIndex, squareIndex } from "../model/squares";
-import { isPlacedAt, placeSquare, setTranslate } from "./placement";
+import { isPlacedAt, placeSquare, setTranslate, outOfBandWrites } from "./placement";
 
 const ROLES: readonly string[] = ["king", "queen", "rook", "bishop", "knight", "pawn"];
 
@@ -47,6 +47,7 @@ const ERA = Symbol("quadrum.placementEra");
 interface Era {
 	epoch: number;
 	orientation: Color;
+	outOfBandWriteWatermark: number;
 }
 
 interface EraCarrier {
@@ -143,111 +144,21 @@ export function placePieceAtPoint(el: HTMLElement, point: Point): void {
 	setTranslate(el, point.x - 0.5, point.y - 0.5);
 }
 
-export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, state: BoardState): void {
-	// Survivors are marked on the element with this render's tick rather than
-	// collected into a Set of squares. The Set cost an allocation plus a hashed
-	// insert per piece -- 32 an update whose only reader is a membership test
-	// the tick answers with a number comparison. It also had to be built for
-	// every piece even though the passes below only ever ask about the handful
-	// that did not survive.
-	const tick = ++renderTick;
-	const needed: Square[] = [];
-	let survivors = 0;
+interface Pair {
+	vacatedSq: Square;
+	// Carried on the pair rather than looked up from `els` when the move is
+	// applied. The moves are applied in a loop that also rewrites `els`, so a
+	// chain -- something moving into a square that is itself vacating, which is
+	// every castle and every recapture -- would otherwise hand the second move
+	// the element the first one just parked there.
+	vacatedEl: HTMLElement;
+	neededSq: Square;
+	distance: number;
+	vacatedIdx: number;
+	neededIdx: number;
+}
 
-	const carrier = board as HTMLElement & EraCarrier;
-	let era = carrier[ERA];
-	if (!era) {
-		era = { epoch: 1, orientation: state.orientation };
-		carrier[ERA] = era;
-	} else if (era.orientation !== state.orientation) {
-		// Every placement on the board is stale at once; a bump beats walking
-		// the elements to clear their records one by one.
-		era.epoch++;
-		era.orientation = state.orientation;
-	}
-	const epoch = era.epoch;
-
-	// PASS 1: Survivors. For each piece in state, if the square already has
-	// an element with a matching piece, keep it. Skip held elements.
-	for (const [square, piece] of state.pieces) {
-		const existing = els.get(square);
-
-		// A held element belongs to the drag layer: it is positioned against the
-		// pointer and handed back on release. Building a replacement for it here
-		// strands the original in the DOM -- the ghost that trails a drag -- and
-		// overwrites the map entry the drag layer looks itself up by, so `held`
-		// never comes off and the stray never leaves. Skip it outright, exactly
-		// as the removal pass below does.
-		if (existing && isHeld(existing)) {
-			(existing as HTMLElement & FlagCarrier)[ALIVE] = tick;
-			survivors++;
-			continue;
-		}
-
-		if (existing) {
-			const occupant = pieceOf(existing);
-			// Identity first: pieces parsed out of a placement are interned, so
-			// the common case is one pointer comparison rather than two string
-			// ones. The field comparison still has to follow, for elements whose
-			// piece was reconstructed from the DOM by pieceOf's fallback.
-			if (occupant === piece || (occupant && occupant.color === piece.color && occupant.role === piece.role)) {
-				// The survivor keeps its element, and usually its placement too:
-				// it was fetched by square, so unless the era moved on (orientation
-				// flip) or something wrote its transform out of band (drag,
-				// animation -- both clear the record's epoch), it is already
-				// exactly where it belongs and the whole placement chain can be
-				// skipped. The comparison is made against a JS-side record rather
-				// than by reading the DOM back.
-				if (!isPlacedAt(existing, square, epoch)) {
-					placePieceEl(existing, square, state.orientation, undefined, epoch);
-				}
-				(existing as HTMLElement & FlagCarrier)[ALIVE] = tick;
-				survivors++;
-				continue;
-			}
-		}
-
-		// This square needs a new element (capture, promotion, or first appearance).
-		needed.push(square);
-	}
-
-	// Every piece survived in place: `vacated` is provably empty too, so the
-	// residual passes would walk `els` to build nothing. Survivors are distinct
-	// elements of `els`, so an equal count means every entry survived.
-	if (survivors === state.pieces.size && survivors === els.size) {
-		return;
-	}
-
-	// PASS 2: Residual matching. Collect elements that don't have survivors
-	// (vacated) and squares that don't have survivors (needed). Match them by
-	// piece identity, ordered by distance like planDiff does.
-
-	interface Pair {
-		vacatedSq: Square;
-		// Carried on the pair rather than looked up from `els` when the move is
-		// applied. The moves are applied in a loop that also rewrites `els`, so a
-		// chain -- something moving into a square that is itself vacating, which is
-		// every castle and every recapture -- would otherwise hand the second move
-		// the element the first one just parked there.
-		vacatedEl: HTMLElement;
-		neededSq: Square;
-		distance: number;
-		vacatedIdx: number;
-		neededIdx: number;
-	}
-
-	const vacated: Array<[Square, HTMLElement]> = [];
-
-	for (const [square, el] of els) {
-		// The held test stays: a held element can sit on a square the new
-		// position does not list at all, so PASS 1 never reaches it and never
-		// stamps it alive. Without this it reads as vacated and gets removed
-		// out from under the drag.
-		if ((el as HTMLElement & FlagCarrier)[ALIVE] !== tick && !isHeld(el)) {
-			vacated.push([square, el]);
-		}
-	}
-
+function applyPairing(board: HTMLElement, els: Map<Square, HTMLElement>, state: BoardState, epoch: number, needed: Square[], vacated: Array<[Square, HTMLElement]>): void {
 	// Build valid pairs (same color and role).
 	const pairs: Pair[] = [];
 
@@ -343,4 +254,137 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 			}
 		}
 	}
+}
+
+export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, state: BoardState, changed?: readonly Square[] | null): void {
+	const tick = ++renderTick;
+	const needed: Square[] = [];
+	const vacated: Array<[Square, HTMLElement]> = [];
+
+	const carrier = board as HTMLElement & EraCarrier;
+	let era = carrier[ERA];
+	let eraCreatedOrBumped = false;
+
+	if (!era) {
+		era = { epoch: 1, orientation: state.orientation, outOfBandWriteWatermark: 0 };
+		carrier[ERA] = era;
+		eraCreatedOrBumped = true;
+	} else if (era.orientation !== state.orientation) {
+		era.epoch++;
+		era.orientation = state.orientation;
+		eraCreatedOrBumped = true;
+	}
+
+	const epoch = era.epoch;
+	const writeCount = outOfBandWrites();
+	// Read the watermark before overwriting it: the guard below needs the count as
+	// this board's *previous* render left it. The store has to happen here rather
+	// than beside the guard, so that every path out of this function -- fast, early
+	// exit, full scan -- leaves it current.
+	const writesAtLastRender = era.outOfBandWriteWatermark;
+	era.outOfBandWriteWatermark = writeCount;
+
+	// Fast path: guards all hold.
+	if (
+		changed !== null &&
+		changed !== undefined &&
+		!eraCreatedOrBumped &&
+		writesAtLastRender === writeCount
+	) {
+		// Guard 4: occupancy arithmetic check. Pre-walk changed to verify the
+		// els/position invariant holds.
+		let occupiedInChanged = 0;
+		let elsInChanged = 0;
+
+		for (const sq of changed) {
+			if (state.pieces.has(sq)) occupiedInChanged++;
+			if (els.has(sq)) elsInChanged++;
+		}
+
+		if (els.size === elsInChanged + (state.pieces.size - occupiedInChanged)) {
+			// Restricted PASS 1: walk changed only.
+			for (const sq of changed) {
+				const piece = state.pieces.get(sq);
+				if (!piece) continue;
+
+				const existing = els.get(sq);
+
+				if (existing && isHeld(existing)) {
+					(existing as HTMLElement & FlagCarrier)[ALIVE] = tick;
+					continue;
+				}
+
+				if (existing) {
+					const occupant = pieceOf(existing);
+					if (occupant === piece || (occupant && occupant.color === piece.color && occupant.role === piece.role)) {
+						if (!isPlacedAt(existing, sq, epoch)) {
+							placePieceEl(existing, sq, state.orientation, undefined, epoch);
+						}
+						(existing as HTMLElement & FlagCarrier)[ALIVE] = tick;
+						continue;
+					}
+				}
+
+				needed.push(sq);
+			}
+
+			// Restricted PASS 2: walk changed only. Unchanged squares are never
+			// stamped alive, so an unrestricted scan would remove them all.
+			for (const sq of changed) {
+				const el = els.get(sq);
+				if (el && (el as HTMLElement & FlagCarrier)[ALIVE] !== tick && !isHeld(el)) {
+					vacated.push([sq, el]);
+				}
+			}
+
+			if (needed.length === 0 && vacated.length === 0) {
+				return;
+			}
+
+			applyPairing(board, els, state, epoch, needed, vacated);
+			return;
+		}
+	}
+
+	// Full scan fallback.
+	let survivors = 0;
+
+	for (const [square, piece] of state.pieces) {
+		const existing = els.get(square);
+
+		if (existing && isHeld(existing)) {
+			(existing as HTMLElement & FlagCarrier)[ALIVE] = tick;
+			survivors++;
+			continue;
+		}
+
+		if (existing) {
+			const occupant = pieceOf(existing);
+			if (occupant === piece || (occupant && occupant.color === piece.color && occupant.role === piece.role)) {
+				if (!isPlacedAt(existing, square, epoch)) {
+					placePieceEl(existing, square, state.orientation, undefined, epoch);
+				}
+				(existing as HTMLElement & FlagCarrier)[ALIVE] = tick;
+				survivors++;
+				continue;
+			}
+		}
+
+		needed.push(square);
+	}
+
+	// Every piece survived in place: `vacated` is provably empty too, so the
+	// residual passes would walk `els` to build nothing. Survivors are distinct
+	// elements of `els`, so an equal count means every entry survived.
+	if (survivors === state.pieces.size && survivors === els.size) {
+		return;
+	}
+
+	for (const [square, el] of els) {
+		if ((el as HTMLElement & FlagCarrier)[ALIVE] !== tick && !isHeld(el)) {
+			vacated.push([square, el]);
+		}
+	}
+
+	applyPairing(board, els, state, epoch, needed, vacated);
 }

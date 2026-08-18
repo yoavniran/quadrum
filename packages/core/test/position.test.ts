@@ -1,4 +1,4 @@
-import { fenToPieces, piecesToFen, clonePieces, samePieces, kingSquare, INITIAL_PLACEMENT } from "../src/model/position";
+import { fenToPieces, piecesToFen, clonePieces, samePieces, kingSquare, changedSquares, INITIAL_PLACEMENT } from "../src/model/position";
 
 describe("position", () => {
 	it("INITIAL_PLACEMENT is the expected FEN placement", () => {
@@ -145,5 +145,86 @@ describe("position", () => {
 		const pieces = fenToPieces("8/8/8/8/8/8/8/8");
 		const sq = kingSquare(pieces, "white");
 		expect(sq).toBeNull();
+	});
+});
+
+describe("changedSquares", () => {
+	it("identical positions produce an empty out", () => {
+		const pieces = fenToPieces(INITIAL_PLACEMENT);
+		const out: string[] = [];
+		changedSquares(pieces, pieces, out as any);
+		expect(out).toHaveLength(0);
+	});
+
+	it("a quiet move yields exactly the two squares", () => {
+		const before = fenToPieces(INITIAL_PLACEMENT);
+		const after = fenToPieces("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR");
+		const out: string[] = [];
+		changedSquares(before, after, out as any);
+		expect(out).toHaveLength(2);
+		expect(out).toContain("e2");
+		expect(out).toContain("e4");
+	});
+
+	it("a capture yields exactly the one destination square", () => {
+		const before = fenToPieces("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR");
+		const after = fenToPieces("rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR");
+		const out: string[] = [];
+		changedSquares(before, after, out as any);
+		expect(out).toHaveLength(2);
+		expect(out).toContain("d7");
+		expect(out).toContain("d5");
+	});
+
+	it("a promotion on the same square yields that square", () => {
+		const before = fenToPieces("8/4P3/8/8/8/8/8/8");
+		const after = fenToPieces("4Q3/8/8/8/8/8/8/8");
+		const out: string[] = [];
+		changedSquares(before, after, out as any);
+		expect(out).toHaveLength(2);
+		expect(out).toContain("e7");
+		expect(out).toContain("e8");
+	});
+
+	it("a piece removed with nothing replacing it yields that square", () => {
+		const before = fenToPieces("8/8/8/8/8/8/8/Q7");
+		const after = fenToPieces("8/8/8/8/8/8/8/8");
+		const out: string[] = [];
+		changedSquares(before, after, out as any);
+		expect(out).toHaveLength(1);
+		expect(out[0]).toBe("a1");
+	});
+
+	it("a piece added to an empty square yields that square", () => {
+		const before = fenToPieces("8/8/8/8/8/8/8/8");
+		const after = fenToPieces("8/8/8/8/8/8/8/Q7");
+		const out: string[] = [];
+		changedSquares(before, after, out as any);
+		expect(out).toHaveLength(1);
+		expect(out[0]).toBe("a1");
+	});
+
+	it("out is cleared on entry", () => {
+		const pieces = fenToPieces(INITIAL_PLACEMENT);
+		const out: string[] = ["junk1", "junk2", "junk3"];
+		changedSquares(pieces, pieces, out as any);
+		expect(out).toHaveLength(0);
+	});
+
+	it("no duplicates for many changed squares", () => {
+		const before = fenToPieces("8/8/8/8/8/8/8/8");
+		const after = fenToPieces(INITIAL_PLACEMENT);
+		const out: string[] = [];
+		changedSquares(before, after, out as any);
+		const unique = new Set(out);
+		expect(unique.size).toBe(out.length);
+	});
+
+	it("fields, not identity: equal color/role but different identity is not changed", () => {
+		const before = fenToPieces(INITIAL_PLACEMENT);
+		const after = fenToPieces(INITIAL_PLACEMENT);
+		const out: string[] = [];
+		changedSquares(before, after, out as any);
+		expect(out).toHaveLength(0);
 	});
 });

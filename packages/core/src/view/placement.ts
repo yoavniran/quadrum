@@ -3,6 +3,8 @@
 // because the getter must serialize the inline style; a WeakMap lookup is ~0.2us.
 // The write-guarding comparison is worth keeping, but read-avoidance must be JS-side.
 
+let outOfBandWriteCount = 0;
+
 export interface Placement {
 	square: string | null;
 	transform: string | null;
@@ -17,6 +19,10 @@ export interface Placement {
 	 *  skip survivors without *assuming* nothing moved them out of band -- any
 	 *  write that bypasses placeSquare clears it. */
 	epoch: number;
+}
+
+export function outOfBandWrites(): number {
+	return outOfBandWriteCount;
 }
 
 // Kept on the element under a private symbol rather than in a module-level
@@ -66,6 +72,7 @@ export function clearSquareAttr(el: HTMLElement): void {
 
 /** Writes `style.transform` only when it differs from what we last wrote. */
 export function setTransform(el: HTMLElement, transform: string): void {
+	outOfBandWriteCount++;
 	const record = recordFor(el);
 	if (record.transform === transform) {
 		return;
@@ -91,6 +98,7 @@ export function setTransform(el: HTMLElement, transform: string): void {
  * is now built only on the writes that actually happen.
  */
 export function setTranslate(el: HTMLElement, x: number, y: number): void {
+	outOfBandWriteCount++;
 	writeTranslate(el, recordFor(el), x, y);
 }
 
@@ -110,6 +118,11 @@ function writeTranslate(el: HTMLElement, record: Placement, x: number, y: number
 	// its own epoch right after this on the render path.
 	record.epoch = 0;
 }
+
+// writeTranslate is not incremented here: it is the shared internal writer, called
+// from both placeSquare (render path) and setTranslate (out-of-band). Only the
+// setTranslate wrapper counts, which marks the out-of-band call path. Counting in
+// writeTranslate would bump on every render and the fast path would never trigger.
 
 /**
  * The two writes that always travel together, sharing one record lookup.

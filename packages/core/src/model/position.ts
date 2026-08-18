@@ -155,3 +155,29 @@ export function kingSquare(pieces: Pieces, color: Color): Square | null {
 	}
 	return null;
 }
+
+export function changedSquares(
+	before: Pieces,
+	after: Pieces,
+	out: Square[],
+): void {
+	out.length = 0;
+
+	// Walk after: find squares where the piece differs.
+	for (const [square, piece] of after) {
+		const other = before.get(square);
+		// Identity first: pieces parsed out of a placement are interned, so
+		// the common case is one pointer comparison. Fall back to comparing
+		// color and role for pieces reconstructed from the DOM.
+		if (!other || (other !== piece && (other.color !== piece.color || other.role !== piece.role))) {
+			out.push(square);
+		}
+	}
+
+	// Walk before: find squares that were occupied but no longer are.
+	for (const square of before.keys()) {
+		if (!after.has(square)) {
+			out.push(square);
+		}
+	}
+}

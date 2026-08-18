@@ -50,18 +50,18 @@ package — lichess moved publishing there at v10, and the unscoped `chessground
 on npm and frozen at 9.2.1.
 
 <!-- bench:headline:start -->
-| Scenario | quadrum | chessground 9.2.1 | Ratio |
+| Scenario | quadrum | chessground 10.1.1 | Ratio |
 | --- | --- | --- | --- |
-| Mount a full board | 1.67 ms | 1.30 ms | 1.28× — **chessground wins** |
-| 100 position updates, animation off | **9.78 ms** | 11.22 ms | **0.87× — quadrum wins** ✅ |
+| Mount a full board | **1.89 ms** | 2.22 ms | **0.85× — quadrum wins** ✅ |
+| 100 position updates, animation off | 4.92 ms | 3.86 ms | 1.27× — parity |
 | 100 position updates, animation on | 16.67 ms | 16.67 ms | 1.00× — parity |
-| Engine arrow re-draw, per tick | 20.75 ms | 19.80 ms | 1.05× — parity |
-| Drag latency, p95 | **20.19 ms** | 20.75 ms | **0.97× — quadrum wins** ✅ |
-| Resize storm, 50 resizes | **0.09 ms** | 0.96 ms | **0.09× — quadrum wins** ✅ |
+| Engine arrow re-draw, per tick | 10.01 ms | 10.29 ms | 0.97× — parity |
+| Drag latency, p95 | **18.68 ms** | 19.48 ms | **0.96× — quadrum wins** ✅ |
+| Resize storm, 50 resizes | **0.04 ms** | 0.60 ms | **0.07× — quadrum wins** ✅ |
 | Retention after teardown | 0 | 0 | 1.00× — parity |
-| Bundle size, min+brotli | 11.1 kB | 11.1 kB | 1.00× — **chessground wins** |
+| Bundle size, min+brotli | **11.1 kB** | 11.9 kB | **0.93× — quadrum wins** ✅ |
 
-*Medians. Measured 2026-08-17 on linux/x64 (4 vCPU Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz), headless Chromium 151.0.7922.34, CPU throttled 4×, 15 repetitions interleaved. quadrum `0.2.2` @ `318da5d` vs chessground `9.2.1`. "Parity" means the 95% confidence intervals overlap — a difference too small to claim.*
+*Medians. Measured 2026-08-18 on linux/x64 (4 vCPU AMD EPYC 9V45 96-Core Processor), headless Chromium 151.0.7922.34, CPU throttled 4×, 15 repetitions interleaved. quadrum `0.3.0` @ `cb83ad5` vs chessground `10.1.1`. "Parity" means the 95% confidence intervals overlap — a difference too small to claim.*
 
 - CPU throttle rate: 4
 - Headless has no real vsync; frame-derived metrics are advisory

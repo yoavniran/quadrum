@@ -1,4 +1,5 @@
 import { defaultState, applyOptions, DEFAULT_PENS } from "../src/options";
+import type { Piece, Pieces, Square } from "../src/types";
 
 describe("options", () => {
 	it("defaultState has correct defaults", () => {
@@ -190,5 +191,39 @@ describe("options", () => {
 		expect(next.orientation).toBe("black");
 		expect(next.coordinates).toBe(false);
 		expect(next.locked).toBe(true);
+	});
+
+	describe("parsed position", () => {
+		it("accepts an already-parsed Pieces map", () => {
+			const pieces: Pieces = new Map<Square, Piece>([
+				["e4", { color: "white", role: "pawn" }],
+				["e8", { color: "black", role: "king" }],
+			]);
+
+			const state = applyOptions(defaultState(), { position: pieces });
+
+			expect(state.pieces.size).toBe(2);
+			expect(state.pieces.get("e4")).toEqual({ color: "white", role: "pawn" });
+		});
+
+		it("clones the supplied map, so the caller keeps ownership", () => {
+			const pieces: Pieces = new Map<Square, Piece>([
+				["e4", { color: "white", role: "pawn" }],
+			]);
+
+			const state = applyOptions(defaultState(), { position: pieces });
+			pieces.delete("e4");
+			pieces.set("a1", { color: "black", role: "rook" });
+
+			expect(state.pieces.get("e4")).toEqual({ color: "white", role: "pawn" });
+			expect(state.pieces.has("a1")).toBe(false);
+		});
+
+		it("still parses a FEN placement string", () => {
+			const state = applyOptions(defaultState(), { position: "8/8/8/8/8/8/4P3/8" });
+
+			expect(state.pieces.size).toBe(1);
+			expect(state.pieces.get("e2")).toEqual({ color: "white", role: "pawn" });
+		});
 	});
 });

@@ -14,6 +14,22 @@ export interface SquareDecorations {
 	hover: Square | null;
 }
 
+// Scratch state, reused across renders. This runs on every position update and
+// every pointermove, for a steady state of about two decorated squares -- a
+// fresh Map, a string[] per square and two arrays per call were pure garbage
+// (and a visible slice of GC in the update profile). Module-scoped is safe:
+// renderSquares never re-enters, and everything here is cleared on entry.
+// The class list is built as a string directly; its only consumer ever was a
+// join(" ").
+const classes = new Map<Square, string>();
+const staleSquares: Square[] = [];
+const freshSquares: Square[] = [];
+
+function addClass(sq: Square, cls: string): void {
+	const existing = classes.get(sq);
+	classes.set(sq, existing === undefined ? cls : `${existing} ${cls}`);
+}
+
 export function renderSquares(
 	board: HTMLElement,
 	els: Map<Square, HTMLElement>,
@@ -31,62 +47,54 @@ export function renderSquares(
 			? state.checkSide
 			: kingSquare(state.pieces, state.checkSide);
 
-	const classes = new Map<Square, string[]>();
+	classes.clear();
+	staleSquares.length = 0;
+	freshSquares.length = 0;
 
 	// Build class lists
 	if (state.lastMove) {
 		for (const sq of state.lastMove) {
-			const c = classes.get(sq) ?? [];
-			c.push("recent");
-			classes.set(sq, c);
+			addClass(sq, "recent");
 		}
 	}
 
 	if (deco.selected) {
-		const c = classes.get(deco.selected) ?? [];
-		c.push("active");
-		classes.set(deco.selected, c);
+		addClass(deco.selected, "active");
 	}
 
 	if (checkSquare) {
-		const c = classes.get(checkSquare) ?? [];
-		c.push("in-check");
-		classes.set(checkSquare, c);
+		addClass(checkSquare, "in-check");
 	}
 
+	const selectedPiece = deco.selected ? state.pieces.get(deco.selected) : undefined;
+
 	for (const sq of deco.targets) {
-		const c = classes.get(sq) ?? [];
-		c.push("target");
+		let c = "target";
 
 		const piece = state.pieces.get(sq);
 		if (piece) {
-			const selectedPiece = deco.selected ? state.pieces.get(deco.selected) : undefined;
 			if (selectedPiece && piece.color === selectedPiece.color) {
-				c.push("friendly");
+				c = "target friendly";
 			} else if (piece.color !== selectedPiece?.color) {
-				c.push("capture");
+				c = "target capture";
 			}
 		}
 
-		classes.set(sq, c);
+		addClass(sq, c);
 	}
 
 	if (deco.hover) {
-		const c = classes.get(deco.hover) ?? [];
-		c.push("hover");
-		classes.set(deco.hover, c);
+		addClass(deco.hover, "hover");
 	}
 
 	// Squares that lost their decoration, and squares that gained one.
 	// Collected first, because both loops below rewrite `els`.
-	const staleSquares: Square[] = [];
 	for (const sq of els.keys()) {
 		if (!classes.has(sq)) {
 			staleSquares.push(sq);
 		}
 	}
 
-	const freshSquares: Square[] = [];
 	for (const sq of classes.keys()) {
 		if (!els.has(sq)) {
 			freshSquares.push(sq);
@@ -139,13 +147,12 @@ export function renderSquares(
 		els.set(freshSquares[i], el);
 	}
 
-	for (const [sq, classList] of classes) {
+	for (const [sq, className] of classes) {
 		const el = els.get(sq)!;
 		if (el.hidden) {
 			el.hidden = false;
 		}
 		setSquareAttr(el, sq);
-		const className = classList.join(" ");
 		if (el.className !== className) {
 			el.className = className;
 		}

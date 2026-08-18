@@ -1,4 +1,5 @@
 import { createBoard } from "../src/board";
+import { markHeld } from "../src/view/piecesView";
 
 const START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
 const E2_E4 = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR";
@@ -91,7 +92,7 @@ describe("Board piece reuse and animation", () => {
 			expect(capturedEl).toBeDefined();
 
 			// Mark it held (as drag layer does)
-			capturedEl!.classList.add("held");
+			markHeld(capturedEl!, true);
 
 			// Move another piece; the held element should survive
 			board.update({ position: CAPTURE_DONE });

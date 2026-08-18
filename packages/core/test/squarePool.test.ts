@@ -112,4 +112,21 @@ describe("renderSquares pooling", () => {
 		expect(el.classList.contains("active")).toBe(false);
 		expect(el.classList.contains("target")).toBe(true);
 	});
+
+	// The class map and the stale/fresh arrays are module-scoped scratch reused
+	// across renders; the failure mode of a hoisted buffer is the first render's
+	// decorations bleeding into the second.
+	it("reused scratch state does not leak decorations across renders", () => {
+		const ctx = setup();
+		render(ctx, { selected: "e2", targets: ["e3", "e4"], hover: "e4" });
+
+		expect(ctx.els.get("e2")!.className).toBe("active");
+		expect(ctx.els.get("e3")!.className).toBe("target");
+		expect(ctx.els.get("e4")!.className).toBe("target hover");
+
+		render(ctx, { selected: "d4" });
+
+		expect(ctx.els.size).toBe(1);
+		expect(ctx.els.get("d4")!.className).toBe("active");
+	});
 });

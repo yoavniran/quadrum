@@ -1,4 +1,4 @@
-import { FILES, RANKS, ALL_SQUARES, isSquare, fileIndex, rankIndex, squareAt, squareToPoint, pointToSquare, clientToPoint, sameSquare, squareToIndices, squareTopLeft, squareAtPixel } from "../src/model/squares";
+import { FILES, RANKS, ALL_SQUARES, isSquare, fileIndex, rankIndex, squareAt, squareIndex, squareToPoint, pointToSquare, clientToPoint, sameSquare, squareToIndices, squareTopLeft, squareAtPixel } from "../src/model/squares";
 
 describe("squares", () => {
 	it("FILES contains a through h", () => {
@@ -7,6 +7,14 @@ describe("squares", () => {
 
 	it("RANKS contains 1 through 8", () => {
 		expect(RANKS).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
+	});
+
+	// squareIndex replaces ALL_SQUARES.indexOf in the diff matchers; their sort
+	// keys must be the exact ordinals the scan produced.
+	it("squareIndex agrees with ALL_SQUARES.indexOf for every square", () => {
+		for (const sq of ALL_SQUARES) {
+			expect(squareIndex(sq)).toBe(ALL_SQUARES.indexOf(sq));
+		}
 	});
 
 	it("ALL_SQUARES has 64 entries in file-major order", () => {

@@ -72,6 +72,7 @@ export function metricFromSamples(
 		direction: Metric["direction"];
 		statistic: "median" | "p95";
 		discardFirst: number;
+		advisory?: string;
 	},
 ): Metric {
 	const { kept, discarded } = applyDiscard(samples, opts.discardFirst);
@@ -88,6 +89,7 @@ export function metricFromSamples(
 		samples: Array.from(kept),
 		discarded: Array.from(discarded),
 		statistic: opts.statistic,
+		advisory: opts.advisory,
 	};
 }
 

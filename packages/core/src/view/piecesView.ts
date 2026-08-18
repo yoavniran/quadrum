@@ -162,12 +162,21 @@ function applyPairing(board: HTMLElement, els: Map<Square, HTMLElement>, state: 
 	// Build valid pairs (same color and role).
 	const pairs: Pair[] = [];
 
-	for (const [vacatedSq, vacatedEl] of vacated) {
+	// Indexed loops, not `for...of`. Array iteration goes through the iterator
+	// protocol, which allocates a {value, done} object per step; this pair is
+	// nested, so it pays that on every vacated x needed combination of every
+	// render. An allocation profile of the anim-off loop charged ~490 kB of
+	// iterator objects to this function. Indexing allocates nothing and walks
+	// the same elements in the same order.
+	for (let v = 0; v < vacated.length; v++) {
+		const vacatedSq = vacated[v][0];
+		const vacatedEl = vacated[v][1];
 		const vacatedPiece = pieceOf(vacatedEl);
 		if (!vacatedPiece) continue;
 		const vacatedIdx = squareIndex(vacatedSq);
 
-		for (const neededSq of needed) {
+		for (let n = 0; n < needed.length; n++) {
+			const neededSq = needed[n];
 			const neededPiece = state.pieces.get(neededSq);
 			if (!neededPiece) continue;
 			const neededIdx = squareIndex(neededSq);
@@ -213,7 +222,8 @@ function applyPairing(board: HTMLElement, els: Map<Square, HTMLElement>, state: 
 	const usedNeeded = new Set<Square>();
 	const moves: Array<{ el: HTMLElement; to: Square }> = [];
 
-	for (const pair of pairs) {
+	for (let i = 0; i < pairs.length; i++) {
+		const pair = pairs[i];
 		if (usedVacated.has(pair.vacatedSq) || usedNeeded.has(pair.neededSq)) {
 			continue;
 		}
@@ -228,22 +238,26 @@ function applyPairing(board: HTMLElement, els: Map<Square, HTMLElement>, state: 
 	// castle chains two moves through adjacent squares -- so interleaving the
 	// deletes with the sets would let one move's delete undo another's set and
 	// strand a live element with no map entry, invisible to every later render.
-	for (const [vacatedSq] of vacated) {
-		els.delete(vacatedSq);
+	for (let i = 0; i < vacated.length; i++) {
+		els.delete(vacated[i][0]);
 	}
 
-	for (const [vacatedSq, el] of vacated) {
+	for (let i = 0; i < vacated.length; i++) {
+		const vacatedSq = vacated[i][0];
+		const el = vacated[i][1];
 		if (!usedVacated.has(vacatedSq) && el.parentNode === board) {
 			board.removeChild(el);
 		}
 	}
 
-	for (const move of moves) {
+	for (let i = 0; i < moves.length; i++) {
+		const move = moves[i];
 		placePieceEl(move.el, move.to, state.orientation, undefined, epoch);
 		els.set(move.to, move.el);
 	}
 
-	for (const neededSq of needed) {
+	for (let i = 0; i < needed.length; i++) {
+		const neededSq = needed[i];
 		if (!usedNeeded.has(neededSq)) {
 			const piece = state.pieces.get(neededSq);
 			if (piece) {
@@ -380,11 +394,11 @@ export function renderPieces(board: HTMLElement, els: Map<Square, HTMLElement>, 
 		return;
 	}
 
-	for (const [square, el] of els) {
+	els.forEach((el, square) => {
 		if ((el as HTMLElement & FlagCarrier)[ALIVE] !== tick && !isHeld(el)) {
 			vacated.push([square, el]);
 		}
-	}
+	});
 
 	applyPairing(board, els, state, epoch, needed, vacated);
 }

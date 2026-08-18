@@ -1,8 +1,11 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
 	aggregateProfile,
 	watchlist,
 	shortUrl,
 	renderTable,
+	WATCH_PATTERNS,
 } from "../runner/profile-aggregate.ts";
 import type { CpuProfile, ProfileNode } from "../runner/profile-aggregate.ts";
 
@@ -199,5 +202,65 @@ describe("renderTable", () => {
 		expect(lines[1]).toContain("a");
 		expect(lines[1]).toContain("x.js:5");
 		expect(lines[1]).toContain("100.0%");
+	});
+});
+
+describe("WATCH_PATTERNS", () => {
+	it("contains the three piece-pass functions", () => {
+		const patternNames = WATCH_PATTERNS.map((p) => p.source);
+		expect(patternNames).toContain("^applyPairing$");
+		expect(patternNames).toContain("^changedSquares$");
+		expect(patternNames).toContain("^outOfBandWrites$");
+	});
+
+	it("matches at least one real function in packages/core/src for each pattern", () => {
+		// Scan packages/core/src for all function declarations
+		const coreDir = join(import.meta.url.replace("file://", ""), "..", "..", "..", "..", "packages", "core", "src");
+		const allFunctions = new Set<string>();
+
+		function scanDir(dir: string): void {
+			let entries: string[];
+			try {
+				entries = readdirSync(dir);
+			} catch {
+				return; // Directory doesn't exist or can't be read
+			}
+			for (const entry of entries) {
+				const path = join(dir, entry);
+				const stat = (() => {
+					try {
+						return readdirSync(path) ? true : false;
+					} catch {
+						return false;
+					}
+				})();
+				if (stat) {
+					// It's a directory
+					scanDir(path);
+				} else if (entry.endsWith(".ts")) {
+					// It's a TypeScript file
+					const content = readFileSync(path, "utf-8");
+					// Match function declarations: export function name, function name, const name = (
+					const matches = content.matchAll(/(?:export\s+)?(?:function\s+(\w+)|const\s+(\w+)\s*=\s*(?:async\s*)?\()/g);
+					for (const match of matches) {
+						const name = match[1] || match[2];
+						if (name) {
+							allFunctions.add(name);
+						}
+					}
+				}
+			}
+		}
+
+		scanDir(coreDir);
+
+		// Check that each pattern matches at least one function
+		for (const pattern of WATCH_PATTERNS) {
+			const matches = Array.from(allFunctions).filter((name) => pattern.test(name));
+			expect(matches.length).toBeGreaterThan(
+				0,
+				`Pattern ${pattern.source} does not match any function in packages/core/src`,
+			);
+		}
 	});
 });

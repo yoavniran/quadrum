@@ -72,12 +72,29 @@ export const DEFAULT_SANITY_DRIFT_FACTOR = 1.5;
 export const MAX_GATED_DETECTABLE_REGRESSION = 1.0;
 
 /**
+ * Gated scenarios minted with a sensitivity above this threshold are warned
+ * rather than silently accepted. Half of MAX_GATED_DETECTABLE_REGRESSION because
+ * the demotion cap is the point where gating is theatre; half of it is the point
+ * where the gate is still honest but has stopped being useful. Derived from the
+ * cap rather than hard-coded, so the two cannot drift apart.
+ */
+export const WARN_GATED_DETECTABLE_REGRESSION = MAX_GATED_DETECTABLE_REGRESSION / 2;
+
+/**
  * Minimum number of timer ticks for a gated metric's central value. 20 ticks (0.1 ms)
  * is the point at which one tick of movement is a 5% ratio swing, which sits inside the
  * 15% gate tolerance with room to spare. Metrics below this are quantized and
  * non-reproducible between runs.
  */
 export const MIN_GATED_MEDIAN_TICKS = 20;
+
+/**
+ * Minimum ticks for a sub-resolution win to render its magnitude. A value under this
+ * threshold is quantized: one tick of movement is 5% of the ratio, so a magnitude read
+ * off it is a precision the instrument does not have. Derived from MIN_GATED_MEDIAN_TICKS
+ * rather than repeating the constant, so the two cannot drift apart.
+ */
+export const SUB_RESOLUTION_TICKS = MIN_GATED_MEDIAN_TICKS;
 
 const HEADLINE_START = "<!-- bench:headline:start -->";
 const HEADLINE_END = "<!-- bench:headline:end -->";
@@ -169,6 +186,77 @@ export function detectableRegression(ratio, ratioCi95, tolerance) {
 	}
 
 	return detectable;
+}
+
+/**
+ * Gated scenarios minted with a sensitivity in the warning band: still gated,
+ * but only just — the gate would miss most of a real regression.
+ *
+ * @param {any} baseline
+ * @returns {Array<{ id: string, sensitivity: number, detectablePercent: number }>}
+ */
+export function sensitivityWarnings(baseline) {
+	const warnings = [];
+
+	for (const [id, scenario] of Object.entries(baseline.scenarios ?? {})) {
+		// Only consider scenarios that are actually gated
+		if (!scenario.gated) {
+			continue;
+		}
+
+		// Only consider scenarios with a sensitivity value
+		if (scenario.sensitivity == null) {
+			continue;
+		}
+
+		// Include if sensitivity is above the warning threshold
+		if (scenario.sensitivity - 1 > WARN_GATED_DETECTABLE_REGRESSION) {
+			warnings.push({
+				id,
+				sensitivity: scenario.sensitivity,
+				detectablePercent: Math.round((scenario.sensitivity - 1) * 100),
+			});
+		}
+	}
+
+	// Sort worst-first (highest sensitivity)
+	warnings.sort((a, b) => b.sensitivity - a.sensitivity);
+
+	return warnings;
+}
+
+/**
+ * CPU model comparison between a run and its baseline. The runner changed if the
+ * models differ, which changes absolute timings but leaves ratios comparable.
+ *
+ * @param {any} summary
+ * @param {any} baseline
+ * @returns {{ comparable: boolean, known: boolean, message: string } | null}
+ */
+export function cpuModelNotice(summary, baseline) {
+	const summaryModel = summary.env?.cpuModel ?? null;
+	const baselineModel = baseline.env?.cpuModel ?? null;
+
+	// Both present and identical: nothing to say
+	if (summaryModel && baselineModel && summaryModel === baselineModel) {
+		return null;
+	}
+
+	// Either side is missing: comparability is unknown
+	if (!summaryModel || !baselineModel) {
+		return {
+			comparable: true,
+			known: false,
+			message: "CPU model not recorded in baseline; comparability is unknown — re-mint to establish a baseline with known hardware",
+		};
+	}
+
+	// Both present but different: mismatch
+	return {
+		comparable: true,
+		known: true,
+		message: `CPU model changed: baseline ${baselineModel} → ${summaryModel}. Ratios remain comparable; absolute timings do not.`,
+	};
 }
 
 /**
@@ -596,6 +684,9 @@ export function makeBaseline(summary, options = {}) {
 			cpuThrottlingRate: summary.browser.cpuThrottlingRate,
 			headless: summary.browser.headless,
 		},
+		env: {
+			cpuModel: summary.env.cpuModel ?? null,
+		},
 		subjects: summary.subjects,
 		scenarios,
 	};
@@ -796,6 +887,7 @@ export function compareToBaseline(summary, baseline, options = {}) {
 		ok: results.every((result) => result.status !== "fail"),
 		overridden,
 		results,
+		cpuNotice: cpuModelNotice(summary, baseline),
 	};
 }
 
@@ -967,9 +1059,10 @@ export function escapeCell(text) {
  * @param {number} ratio
  * @param {boolean} tie
  * @param {boolean} belowResolution true if either subject's value is below the timer floor
+ * @param {{ qValue?: number, cValue?: number }} context optional context for rendering sub-resolution wins
  * @returns {string}
  */
-export function formatRatio(ratio, tie, belowResolution = false) {
+export function formatRatio(ratio, tie, belowResolution = false, context = {}) {
 	if (!Number.isFinite(ratio)) {
 		return "—";
 	}
@@ -980,6 +1073,19 @@ export function formatRatio(ratio, tie, belowResolution = false) {
 		if (tie) {
 			return "below timer resolution — parity";
 		}
+
+		// For sub-resolution wins, describe the winner's work rather than the magnitude
+		const { qValue, cValue } = context;
+		if (ratio < 1 && Number.isFinite(qValue)) {
+			// quadrum wins: it did no measurable work
+			return `**quadrum ≈ ${formatValue(qValue, "ms")} (below timer resolution) — does no measurable work here** ✅`;
+		}
+		if (ratio >= 1 && Number.isFinite(cValue)) {
+			// chessground wins: it did no measurable work
+			return `chessground ≈ ${formatValue(cValue, "ms")} (below timer resolution) — does no measurable work here`;
+		}
+
+		// Fallback to original text if context is missing
 		return ratio < 1
 			? "**below timer resolution — quadrum wins** ✅"
 			: "below timer resolution — **chessground wins**";
@@ -1023,9 +1129,14 @@ export function renderHeadlineTable(summary) {
 			const quadrum = formatValue(qValue, metric.unit);
 			const chessground = formatValue(cValue, metric.unit);
 			const better = !metric.comparison.tie && metric.comparison.verdict === "quadrum";
-			const belowResolution = metric.unit === "ms" && (qValue < TIMER_RESOLUTION_MS || cValue < TIMER_RESOLUTION_MS);
+			// Below "a few timer quanta" (SUB_RESOLUTION_TICKS), the magnitude is unclaimable
+			// but direction is still known. Note that formatValue uses TIMER_RESOLUTION_MS for
+			// its own "unresolvable" distinction (a value being too small to measure), while
+			// this is about a *ratio* being unclaimable (a difference too small to resolve).
+			const subResolutionThreshold = SUB_RESOLUTION_TICKS * TIMER_RESOLUTION_MS;
+			const belowResolution = metric.unit === "ms" && (qValue < subResolutionThreshold || cValue < subResolutionThreshold);
 
-			return `| ${escapeCell(scenario.title)} | ${better ? `**${quadrum}**` : quadrum} | ${chessground} | ${formatRatio(metric.comparison.ratio, metric.comparison.tie, belowResolution)} |`;
+			return `| ${escapeCell(scenario.title)} | ${better ? `**${quadrum}**` : quadrum} | ${chessground} | ${formatRatio(metric.comparison.ratio, metric.comparison.tie, belowResolution, { qValue, cValue })} |`;
 		});
 
 	const date = summary.run.startedAt.slice(0, 10);
@@ -1166,6 +1277,18 @@ export function renderGateSummary(gate) {
 		lines.push(
 			`| ${escapeCell(result.scenarioId)} | ${STATUS_ICON[result.status] ?? ""} ${result.status} | ${sensitivityText} | ${escapeCell(result.reason)} |`,
 		);
+	}
+
+	// Add sensitivity legend
+	const warnPercent = Math.round(WARN_GATED_DETECTABLE_REGRESSION * 100);
+	const maxPercent = Math.round(MAX_GATED_DETECTABLE_REGRESSION * 100);
+	lines.push("");
+	lines.push(`> Sensitivity is the smallest regression this scenario's gate can still detect. Above +${warnPercent}% a scenario is flagged weak at mint; above +${maxPercent}% it is demoted to reported-only.`);
+
+	// Add CPU model notice if present
+	if (gate.cpuNotice) {
+		lines.push("");
+		lines.push(`> ${gate.cpuNotice.message}`);
 	}
 
 	if (gate.overridden) {

@@ -5,9 +5,12 @@
 import {
 	measureFrameInterval,
 	nextFrame,
+	nextFrameEntry,
+	frameScriptMs,
 	observeLongTasks,
 } from "../core/clock";
 import { percentile } from "../core/stats";
+import { metricFromSamples } from "../core/harness";
 import { GAME_POSITIONS } from "../data/game";
 import { INITIAL_PLACEMENT } from "quadrum";
 import type {
@@ -23,12 +26,14 @@ export const updateAnimOnScenario: Scenario = {
 	title: "100 position updates, animation on",
 	description: "Replay a sequence of board positions with animation enabled.",
 	parity:
-		"Animation enabled on both at 200ms. Positions are applied one per animation frame, so both libraries face the same arrival rate.",
+		"Animation enabled on both at 200ms. Both subjects timed over the same two halves: synchronous work in setPosition, then the library's rAF work in the same frame. Positions arrive one per frame, so both libraries face the same arrival rate.",
 	endCondition:
 		"All updates dispatched and one further frame has been painted.",
-	headlineMetric: "frame-interval-p95",
-	// Identical values with zero-width CIs across 31 repetitions means three passes prove
-	// the same thing — both libraries keep up and drop nothing — at a twelfth of the cost.
+	headlineMetric: "update-anim-frame-script-ms",
+	// Three repetitions gives a wide interval on the frame script metric — the reason
+	// this scenario stays ungated. The metric *can* move when a regression changes the
+	// library's deferred work, unlike the frame-interval metrics which are vsync-locked.
+	// Raising repsCap is the lever if it ever needs to gate.
 	repsCap: 3,
 	defaults: { sizePx: 480, iterations: 100, warmupIterations: 1, discardFirst: 10 },
 
@@ -52,6 +57,7 @@ export const updateAnimOnScenario: Scenario = {
 		});
 
 		const frameDeltas: number[] = [];
+		const frameScriptSamples: number[] = [];
 		const longTasks = observeLongTasks();
 
 		try {
@@ -63,12 +69,21 @@ export const updateAnimOnScenario: Scenario = {
 				}
 
 				const position = GAME_POSITIONS[i % GAME_POSITIONS.length];
-				adapter.setPosition(position);
 
-				const now = await nextFrame();
-				const delta = now - lastTime;
+				// Synchronous half: measure setPosition
+				const t0 = performance.now();
+				adapter.setPosition(position);
+				const syncMs = performance.now() - t0;
+
+				// Deferred half: measure the library's rAF work that runs before ours
+				const { timestamp: rafTimestamp, enteredAt } = await nextFrameEntry();
+				const delta = rafTimestamp - lastTime;
 				frameDeltas.push(delta);
-				lastTime = now;
+				lastTime = rafTimestamp;
+
+				// Calculate total frame script time
+				const scriptMs = frameScriptMs(syncMs, rafTimestamp, enteredAt);
+				frameScriptSamples.push(scriptMs);
 			}
 
 			// Paint one more frame
@@ -112,6 +127,13 @@ export const updateAnimOnScenario: Scenario = {
 			];
 
 			const metrics: Metric[] = [
+				metricFromSamples("update-anim-frame-script-ms", "Frame script", frameScriptSamples, {
+					unit: "ms",
+					direction: "lower",
+					statistic: "p95",
+					discardFirst: options.discardFirst,
+					advisory: "headless has no real vsync; this measures deferred work that moves with the library, unlike frame-interval which is vsync-locked",
+				}),
 				{
 					key: "frame-interval-ms",
 					label: "Frame interval",

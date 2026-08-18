@@ -30,6 +30,7 @@
 
 import baselineJson from "../results/baseline.json";
 import { SCENARIOS, GATED_SCENARIO_IDS } from "../src/scenarios/registry";
+import { updateAnimOnScenario } from "../src/scenarios/03-update-anim-on";
 
 interface BaselineScenario {
 	readonly headlineMetric: string;
@@ -56,7 +57,12 @@ const RE_MINT = "re-mint the baseline: workflow_dispatch on bench.yml with mint_
  * below fail if an entry stops drifting, so the list cannot quietly become
  * permanent.
  */
-const PENDING_REMINT: ReadonlySet<string> = new Set();
+const PENDING_REMINT: ReadonlySet<string> = new Set([
+	// update-throughput-anim-on: changed headlineMetric to "update-anim-frame-script-ms"
+	// (was "frame-interval-p95"). The scenario now measures frame script time instead
+	// of frame intervals, which can move with the library. Baseline must be re-minted.
+	"update-throughput-anim-on",
+]);
 
 describe("committed baseline is in sync with the scenario registry", () => {
 	it("covers exactly the scenarios the registry defines", () => {
@@ -135,4 +141,14 @@ describe("committed baseline is in sync with the scenario registry", () => {
 			});
 		});
 	}
+});
+
+describe("update-throughput-anim-on configuration", () => {
+	it("headlines the new frame-script-ms metric", () => {
+		expect(updateAnimOnScenario.headlineMetric).toBe("update-anim-frame-script-ms");
+	});
+
+	it("is not gated", () => {
+		expect(GATED_SCENARIO_IDS.includes("update-throughput-anim-on")).toBe(false);
+	});
 });

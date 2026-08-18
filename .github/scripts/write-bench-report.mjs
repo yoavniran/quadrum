@@ -41,6 +41,7 @@ import {
 	checkFreshness,
 	guardBaselineChange,
 	remeasurableFailures,
+	sensitivityWarnings,
 	OVERRIDE_LABEL,
 } from "./bench-report.mjs";
 
@@ -209,6 +210,20 @@ if (mode === "summarize") {
 		stepSummary(
 			`### Demoted at mint\n\nThese scenarios stay in the report but will not gate PRs until a quieter run re-mints them:\n\n${demoted
 				.map(([id, entry]) => `- **${id}** — ${entry.demotedReason}`)
+				.join("\n")}`,
+		);
+	}
+
+	const weakGates = sensitivityWarnings(baseline);
+
+	if (weakGates.length > 0) {
+		for (const warning of weakGates) {
+			console.warn(`weak gate at mint: ${warning.id}: can only detect +${warning.detectablePercent}% regression — re-mint on a quieter run, or accept it and say so`);
+		}
+
+		stepSummary(
+			`### Weak gate at mint\n\nThese scenarios are gated but sensitive, and a regression just below their detectable threshold would slip through.\n\n${weakGates
+				.map((w) => `- **${w.id}** — ≥ +${w.detectablePercent}% detectable: re-mint on a quieter run, or accept it and say so`)
 				.join("\n")}`,
 		);
 	}

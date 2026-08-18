@@ -13,6 +13,7 @@ reports/
 # latest.json are published artefacts; everything else there is scratch.
 apps/bench/results/ab-*.json
 apps/bench/results/ablate-*.json
+apps/bench/results/*.cpuprofile
 
 docs/thrifty/
 

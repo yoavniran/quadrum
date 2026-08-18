@@ -12,6 +12,7 @@
 		"preview": "vite preview --port 5373 --strictPort",
 		"bench": "node runner/run.ts",
 		"bench:quick": "node runner/run.ts --runs 1 --throttle 1",
+		"bench:profile": "node runner/profile.ts",
 		"typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.runner.json"
 	},
 	"dependencies": {

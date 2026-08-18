@@ -65,8 +65,8 @@ export async function findFreePort(preferred: number): Promise<number> {
 /**
  * Build the app using Vite.
  */
-export async function buildApp(cwd: string): Promise<void> {
-	const proc = spawn("pnpm", ["exec", "vite", "build"], {
+export async function buildApp(cwd: string, extraArgs: readonly string[] = []): Promise<void> {
+	const proc = spawn("pnpm", ["exec", "vite", "build", ...extraArgs], {
 		cwd,
 		stdio: "inherit",
 	});

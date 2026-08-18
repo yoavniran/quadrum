@@ -289,6 +289,24 @@ it now tolerates one rather than dying on it, but the plain form is the document
 `--runs` is between-process repetition (a fresh browser each time); `--iterations` is within-page.
 Both are recorded. `--runs` defaults to 7 — odd, so the median is a real sample.
 
+### Profiling a scenario
+
+```sh
+pnpm --filter quadrum-bench bench:profile                                  # update-throughput-anim-off, throttle 4x
+pnpm --filter quadrum-bench bench:profile --scenario engine-arrow-tick --rounds 5
+```
+
+The profiler answers **where** a scenario's script time goes, which the runner's medians and
+ratios cannot. It rebuilds the app **unminified** (so stacks carry source names — the runner's
+next build restores the minified bundle), drives the same `__bench.run()` under the same CPU
+throttle, and samples V8 at 50µs. It prints per-function self/total time plus a watchlist of the
+quadrum update-path functions, and writes the raw profile to
+`results/profile-<scenario>.cpuprofile` (gitignored — open it in Chrome DevTools or speedscope).
+
+The profiled window covers both subjects **and** the bench scaffolding, warmup passes included.
+Its numbers are attribution evidence for scoping perf work; they are not benchmark results and
+must never feed the gate.
+
 ### Reporting
 
 ```sh

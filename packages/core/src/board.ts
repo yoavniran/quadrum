@@ -4,7 +4,7 @@ import {
 	defaultState,
 	applyOptions,
 } from "./options";
-import { piecesToFen, samePieces } from "./model/position";
+import { piecesToFen, samePieces, changedSquares } from "./model/position";
 import { squareToPoint, clientToPoint } from "./model/squares";
 import { planDiff } from "./model/diffPlan";
 // The animation writes transforms straight onto piece elements, so it must go
@@ -79,6 +79,9 @@ export class Board implements MoveContext, MarkContext {
 	 *  Cancelling an animation must still run it: the cleanup is what removes the
 	 *  cloned fade elements and strips the transient gliding/appearing state. */
 	private finishAnimation: (() => void) | null = null;
+	/** Buffer for changed squares, refilled on each update(). Passed to
+	 *  renderPieces and consumed synchronously within the call; reuse is safe. */
+	private _changedBuf: Square[] = [];
 
 	constructor(container: HTMLElement, options?: BoardOptions) {
 		this.container = container;
@@ -295,6 +298,16 @@ export class Board implements MoveContext, MarkContext {
 		// this phase.
 		const parts = dirtyParts(options);
 
+		// Computed once for the render this update triggers, and only when the piece
+		// layer is in it: for a bag that leaves the position alone (a sideToMove or
+		// handler swap) walking both maps buys nothing, and renderPieces is not
+		// called to read it anyway.
+		let changed: readonly Square[] | null = null;
+		if (parts & PART_PIECES) {
+			changedSquares(before, this._state.pieces, this._changedBuf);
+			changed = this._changedBuf;
+		}
+
 		// Handle animation (rule 5)
 		// Compare by value, not identity: applyOptions *always* clones the
 		// pieces map, so an identity check is unconditionally true and would
@@ -318,7 +331,7 @@ export class Board implements MoveContext, MarkContext {
 
 			// Render at final positions immediately. The animation itself moves
 			// piece elements, so union in the piece layer.
-			this.render(mergeParts(parts, PIECES_AND_SQUARES));
+			this.render(mergeParts(parts, PIECES_AND_SQUARES), changed);
 
 			// Prepare animation data for moves
 			const moveData = plan.moves.map((move) => {
@@ -417,7 +430,7 @@ export class Board implements MoveContext, MarkContext {
 				cleanup,
 			);
 		} else {
-			this.render(parts);
+			this.render(parts, changed);
 		}
 	}
 
@@ -505,7 +518,7 @@ export class Board implements MoveContext, MarkContext {
 	/** Render dirty layers. Defaults to all parts: an unrouted caller must
 	 *  over-render, never under-render, because a missed layer is a visible bug
 	 *  while a spare layer is only slow. */
-	private render(parts: RenderParts = ALL_PARTS): void {
+	private render(parts: RenderParts = ALL_PARTS, changed?: readonly Square[] | null): void {
 		if (parts & PART_WRAP) {
 			applyWrapState(this._dom, this._state);
 		}
@@ -513,7 +526,7 @@ export class Board implements MoveContext, MarkContext {
 			renderCoords(this._dom, this._state);
 		}
 		if (parts & PART_PIECES) {
-			renderPieces(this._dom.board, this._pieceEls, this._state);
+			renderPieces(this._dom.board, this._pieceEls, this._state, changed);
 		}
 
 		if (parts & PART_SQUARES) {

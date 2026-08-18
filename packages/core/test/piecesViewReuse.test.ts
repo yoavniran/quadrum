@@ -369,4 +369,228 @@ describe("piecesView reuse and registry", () => {
 			expect(pieceOf(el)).toBeNull();
 		});
 	});
+
+	describe("fast path (changed hint)", () => {
+		it("a correct hint renders the same DOM as no hint", () => {
+			const state1 = defaultState();
+			state1.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
+			const els1: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els1, state1);
+
+			const board2 = document.createElement("div");
+			document.body.appendChild(board2);
+			const state2 = defaultState();
+			state2.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
+			const els2: Map<Square, HTMLElement> = new Map();
+			renderPieces(board2, els2, state2);
+
+			// Move pawn e2 -> e4 on board1 with hint
+			const afterMove1 = defaultState();
+			afterMove1.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR");
+			const changed: Square[] = ["e2", "e4"];
+			renderPieces(board, els1, afterMove1, changed);
+
+			// Same move on board2 without hint
+			const afterMove2 = defaultState();
+			afterMove2.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR");
+			renderPieces(board2, els2, afterMove2);
+
+			// Compare DOM structure
+			expect(board.children.length).toBe(board2.children.length);
+			const squares1 = Array.from(board.children).map((el) => (el as any).dataset.square);
+			const squares2 = Array.from(board2.children).map((el) => (el as any).dataset.square);
+			expect(squares1).toEqual(squares2);
+
+			board2.remove();
+		});
+
+		it("a hint keeps unchanged elements by identity", () => {
+			const state = defaultState();
+			state.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			const a7El = els.get("a7");
+
+			// Move e2 -> e4
+			const afterMove = defaultState();
+			afterMove.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR");
+			const changed: Square[] = ["e2", "e4"];
+			renderPieces(board, els, afterMove, changed);
+
+			expect(els.get("a7")).toBe(a7El);
+		});
+
+		it("a hint does not remove unchanged pieces", () => {
+			const state = defaultState();
+			state.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			const initialSize = els.size;
+
+			// Move e2 -> e4
+			const afterMove = defaultState();
+			afterMove.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR");
+			const changed: Square[] = ["e2", "e4"];
+			renderPieces(board, els, afterMove, changed);
+
+			expect(els.size).toBe(initialSize);
+		});
+
+		it("a hinted capture removes exactly the captured element", () => {
+			const state = defaultState();
+			state.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/4p3/8/PPPPPPPP/RNBQKBNR");
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			const capturedEl = els.get("e4");
+			const captoringEl = els.get("e2");
+
+			// White pawn e2 captures black pawn e4
+			const afterCapture = defaultState();
+			afterCapture.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR");
+			const changed: Square[] = ["e2", "e4"];
+			renderPieces(board, els, afterCapture, changed);
+
+			expect(els.get("e4")).toBe(captoringEl);
+			expect(capturedEl?.parentNode).toBeNull();
+			expect(els.has("e2")).toBe(false);
+		});
+
+		it("a hinted move reuses the moving element", () => {
+			const state = defaultState();
+			state.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			const movedEl = els.get("e2");
+
+			// Move e2 -> e4
+			const afterMove = defaultState();
+			afterMove.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR");
+			const changed: Square[] = ["e2", "e4"];
+			renderPieces(board, els, afterMove, changed);
+
+			expect(els.get("e4")).toBe(movedEl);
+		});
+
+		it("guard 2: orientation flip with hint passed falls back and re-places", () => {
+			const state = defaultState();
+			state.orientation = "white";
+			state.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			const e2El = els.get("e2");
+			const whiteTransform = e2El?.style.transform;
+
+			// Flip to black
+			const flipped = defaultState();
+			flipped.orientation = "black";
+			flipped.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
+			const changed: Square[] = Array.from(flipped.pieces.keys());
+			renderPieces(board, els, flipped, changed);
+
+			// Every element should be re-placed due to orientation change
+			expect(e2El?.style.transform).not.toBe(whiteTransform);
+		});
+
+		it("guard 3: an out-of-band write on a square the hint calls unchanged is still corrected", () => {
+			const state = defaultState();
+			state.pieces = fenToPieces("4k3/8/8/8/8/8/4P3/4K3");
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			// e1 is the square the hint will NOT mention. Stranding it here is what
+			// a released drag does: the transform is written outside placeSquare, so
+			// only the out-of-band counter can tell the next render to look.
+			const strandedEl = els.get("e1")!;
+			const settled = strandedEl.style.transform;
+			setTransform(strandedEl, "translate(50%, 50%)");
+			expect(strandedEl.style.transform).not.toBe(settled);
+
+			// A legitimate hint for a real move elsewhere: e2 -> e4, e1 untouched.
+			const after = defaultState();
+			after.pieces = fenToPieces("4k3/8/8/8/4P3/8/8/4K3");
+			renderPieces(board, els, after, ["e4", "e2"]);
+
+			// Only guard 3 can catch this: e1 is absent from the hint, so a
+			// restricted PASS 1 never revisits it, and the occupancy arithmetic of
+			// guard 4 accepts the hint as correct -- which it is.
+			expect(strandedEl.style.transform).toBe(settled);
+			expect(els.get("e4")).toBeDefined();
+			expect(els.has("e2")).toBe(false);
+		});
+
+		it("guard 4: deliberately wrong hint still renders correctly via fallback", () => {
+			const state = defaultState();
+			state.pieces = fenToPieces("4k3/8/8/8/8/8/4P3/4K3");
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			// Move e2 -> e4
+			const afterMove = defaultState();
+			afterMove.pieces = fenToPieces("4k3/8/8/8/4P3/8/8/4K3");
+			// Deliberately wrong hint: omit e2 (the source)
+			const wrongHint: Square[] = ["e4"];
+			renderPieces(board, els, afterMove, wrongHint);
+
+			// Should still render correctly despite wrong hint
+			expect(els.get("e4")?.dataset.square).toBe("e4");
+			expect(els.get("e2")).toBeUndefined();
+		});
+
+		it("an empty hint with unchanged position renders nothing", () => {
+			const state = defaultState();
+			state.pieces = fenToPieces("4k3/8/8/8/8/8/4P3/4K3");
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			const initialSize = els.size;
+			const initialChildCount = board.children.length;
+
+			// Empty hint, unchanged position
+			const unchanged = defaultState();
+			unchanged.pieces = fenToPieces("4k3/8/8/8/8/8/4P3/4K3");
+			renderPieces(board, els, unchanged, []);
+
+			expect(els.size).toBe(initialSize);
+			expect(board.children.length).toBe(initialChildCount);
+		});
+
+		it("a held element on a hinted changed square is not replaced", () => {
+			const state = defaultState();
+			state.pieces = fenToPieces("4k3/8/8/8/8/8/4P3/4K3");
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			const el = els.get("e2");
+			markHeld(el!, true);
+
+			// Unchanged position but e2 in hint
+			const unchanged = defaultState();
+			unchanged.pieces = fenToPieces("4k3/8/8/8/8/8/4P3/4K3");
+			const changed: Square[] = ["e2"];
+			renderPieces(board, els, unchanged, changed);
+
+			expect(els.get("e2")).toBe(el);
+		});
+
+		it("no hint at all behaves exactly as before", () => {
+			const state = defaultState();
+			state.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
+			const els: Map<Square, HTMLElement> = new Map();
+			renderPieces(board, els, state);
+
+			const initialSize = els.size;
+
+			// Move without hint
+			const afterMove = defaultState();
+			afterMove.pieces = fenToPieces("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR");
+			renderPieces(board, els, afterMove);
+
+			expect(els.size).toBe(initialSize);
+		});
+	});
 });

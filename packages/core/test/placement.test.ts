@@ -1,4 +1,4 @@
-import { setSquareAttr, clearSquareAttr, placeSquare, setTransform, setTranslate } from "../src/view/placement";
+import { setSquareAttr, clearSquareAttr, placeSquare, setTransform, setTranslate, outOfBandWrites, isPlacedAt } from "../src/view/placement";
 
 describe("placement", () => {
 	it("setSquareAttr writes data-square the first time", () => {
@@ -165,6 +165,66 @@ describe("placement", () => {
 			setTransform(el, "translate(300%, 400%)");
 
 			expect(el.style.transform).toBe("");
+		});
+	});
+
+	describe("outOfBandWrites", () => {
+		it("returns a number that never decreases across calls", () => {
+			const count1 = outOfBandWrites();
+			const count2 = outOfBandWrites();
+			expect(count2).toBeGreaterThanOrEqual(count1);
+		});
+
+		it("setTranslate increments it", () => {
+			const before = outOfBandWrites();
+			const el = document.createElement("qd-piece");
+			setTranslate(el, 1, 2);
+			const after = outOfBandWrites();
+			expect(after).toBe(before + 1);
+		});
+
+		it("setTransform increments it", () => {
+			const before = outOfBandWrites();
+			const el = document.createElement("qd-piece");
+			setTransform(el, "translate(10%, 20%)");
+			const after = outOfBandWrites();
+			expect(after).toBe(before + 1);
+		});
+
+		it("an elided setTransform still increments it", () => {
+			const el = document.createElement("qd-piece");
+			setTransform(el, "translate(10%, 20%)");
+			const before = outOfBandWrites();
+			setTransform(el, "translate(10%, 20%)");
+			const after = outOfBandWrites();
+			expect(after).toBe(before + 1);
+		});
+
+		it("an elided setTranslate still increments it", () => {
+			const el = document.createElement("qd-piece");
+			setTranslate(el, 3, 4);
+			const before = outOfBandWrites();
+			setTranslate(el, 3, 4);
+			const after = outOfBandWrites();
+			expect(after).toBe(before + 1);
+		});
+
+		it("placeSquare does not increment it", () => {
+			const el = document.createElement("qd-piece");
+			const before = outOfBandWrites();
+			placeSquare(el, "a1", 1, 2, 1);
+			placeSquare(el, "b2", 2, 3, 1);
+			placeSquare(el, "c3", 3, 4, 1);
+			const after = outOfBandWrites();
+			expect(after).toBe(before);
+		});
+
+		it("placeSquare after a setTranslate still re-stamps the epoch", () => {
+			const el = document.createElement("qd-piece");
+			setTranslate(el, 3, 4);
+			const epoch = 5;
+			placeSquare(el, "a1", 3, 4, epoch);
+			expect(isPlacedAt(el, "a1", epoch)).toBe(true);
 		});
 	});
 });

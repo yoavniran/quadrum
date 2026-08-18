@@ -17,7 +17,7 @@ Last updated: 2026-08-19 · `main` at `558cc2a` · published version `quadrum@0.
 | [`update-path-node-churn.md`](update-path-node-churn.md) | Allocation and DOM churn on the position-update path | **Delivered** — landed across #28, #31, #33, #38, #40, #46. |
 | [`arrow-diff-and-lazy-mount.md`](arrow-diff-and-lazy-mount.md) | Arrow diffing and deferring work until a board is visible | **Partially delivered** — the arrow half landed (#42, #49); lazy mount has not been started. |
 | [`update-path-render-cost.md`](update-path-render-cost.md) | Position-update rendering cost and per-frame layout | **Delivered, partly** — planned ~10% improvement on a stale 1.53× basis; the headline metric moved from a strict CI loss to **parity** across #73–#77. The planned percentage was measured against a baseline that no longer existed by the time the work ran, so the honest statement is the parity move, not a percentage. |
-| [`bench-trust-and-update-tail.md`](bench-trust-and-update-tail.md) | Gate sensitivity calibration, sub-resolution win rendering, stale profiler attribution | **In progress** — this branch. |
+| [`bench-trust-and-update-tail.md`](bench-trust-and-update-tail.md) | Gate sensitivity calibration, sub-resolution win rendering, stale profiler attribution, the anim-off tail | **Delivered** — W1, W3–W7 landed as reporting and tooling changes; W2 cut update-path allocation by 58% and moved the per-update p95, see *The anim-off tail (W2) in detail* below. |
 
 ---
 
@@ -77,6 +77,80 @@ gate moved from red to green on the same scenario, but the interval is still wid
 
 **Bundle cost:** `11 540 → 11 874 B` brotli, **+334 B (+2.9%)** — under the gate and
 honestly stated rather than left for a reader to diff two baselines.
+
+### The anim-off tail (W2) in detail
+
+The spec asked whether the anim-off tail is GC pressure or scheduler noise, and required
+that the answer come from an allocation profile rather than from reading the code. Both
+halves of that turned out to matter.
+
+**The harness was wrong first.** `HeapProfiler.startSampling` takes
+`includeObjectsCollectedByMajorGC` and `includeObjectsCollectedByMinorGC`, and both
+default to **false** — V8 then drops every sampled object the GC later collected, so the
+profile reports only what *survived*. That is the exact inverse of a GC-pressure question:
+short-lived garbage, the thing being hunted, is invisible. The first profile duly reported
+0.07 MB over three rounds and showed the update path as essentially allocation-free. That
+reading would have been published as an acquittal.
+
+Two self-consistency checks — sampling-interval independence (1024 B vs 128 B) and
+scaling with round count — both looked healthy and **did not catch it**. What caught it
+was an independent calibration: allocate a known quantity (1000 throwaway 32-entry Maps)
+and check the profiler reports it. Under the defaults it reported 64 kB; with the flags
+on, 3.80 MB — a 60× gap. The real profile went from 0.07 MB to **20.77 MB**. The flags and
+the calibration figure are now pinned in a comment in `apps/bench/runner/heap-profile.ts`
+so the harness cannot silently regress to reporting survivors.
+
+**The verdict: GC, and none of the suspects.** With a profiler that could see garbage, the
+convicted allocator was the **iterator protocol**, not any of the allocations the spec
+named as suspects. `for...of` over a `Map` allocates a `{value, done}` result object per
+entry and, when the loop destructures, a `[key, value]` pair array as well; `for...of`
+over an array pays the result object too. Ranked by self-bytes over three rounds:
+
+| function | before | after | change |
+| --- | --- | --- | --- |
+| `changedSquares` | ~3.0 MB | — | eliminated |
+| `applyPairing` | 1.45 MB | 713 kB | −51% |
+| `renderPieces` | 1.90 MB | 1.19 MB | −37% |
+| `renderSquares` iterator objects | ~250 kB | — | eliminated |
+| **quadrum `update` subtree** | **6.78 MB** | **2.85 MB** | **−58%** |
+
+`changedSquares` alone was 44% of the update subtree. The fix is `Map.prototype.forEach`
+and indexed `for` loops in the convicted walks — same walks, same order, same output, no
+state kept between calls. **No cache was introduced: the FEN-parse cache rejection
+stands.** chessground, unchanged throughout, held at 2.2–2.6 MB across the same runs and
+serves as the control; quadrum went from ~2.9× chessground's per-update allocation to
+roughly parity.
+
+`fenToPieces` is the largest remaining allocator (`set` 407 kB, `split` 174 kB) and was
+deliberately left alone — it is exactly the site whose caching fix the spec rejects, and
+the non-caching alternative is a larger rewrite than this item justifies.
+
+**What the timing shows, and what it does not.** Local A/B/A on
+`update-throughput-anim-off`, 15 repetitions per arm, fixed → ablated → fixed, with
+chessground as an unchanged control in every arm:
+
+| metric | fixed | ablated | fixed (repeat) |
+| --- | --- | --- | --- |
+| per-update script p95, quadrum | 0.166 ms | 0.300 ms | 0.150 ms |
+| per-update script p95, ÷ chessground | 0.561 | 0.690 | 0.429 |
+| total script median, quadrum | 2.94 ms | 4.15 ms | 2.74 ms |
+| total script median, ÷ chessground | 0.902 | 0.994 | 0.775 |
+
+The ablated arm sits outside both fixed arms on every script row, in the same direction,
+against a control measured alongside it — so **the p95 tail did come down**, and it is not
+drift. The single-pair comparison would not have shown this honestly: chessground's own
+numbers moved 20–30% between the first two arms, which is why the third arm exists.
+
+Two things the data does **not** support. First, the **CI half-width did not close**:
+quadrum's per-update p95 interval was 0.211 / 0.260 / 0.245 ms across the three arms —
+flat. The spec asked for p95 *and* half-width to close toward chessground's; only the p95
+did. Second, the spread between the two fixed arms is nearly as large as the effect on the
+total-script ratio (0.902 vs 0.775), so the direction is solid but **no magnitude should be
+quoted from these local numbers**. `update-total-layout-ms` did not move at all
+(ratio 0.85 / 0.86 / 0.84), as expected — nothing here touches the DOM-write path.
+
+None of these numbers feed the gate. The committed baseline is CI hardware and is not
+comparable to a laptop; a re-mint on CI is what would move the gated figure.
 
 ---
 

@@ -2088,22 +2088,64 @@ describe("sensitivityWarnings", () => {
 		expect(warnings).toHaveLength(0);
 	});
 
-	it("matches the committed baseline for anim-off at 81%", async () => {
-		// This is the spec's acceptance criterion: pin against the real baseline
+	// Wiring against the REAL baseline, without pinning any measurement from it.
+	//
+	// The first version of this test asserted anim-off warns "at 81%" -- the value
+	// mint #78 happened to produce. That inverted the incentive the warning exists
+	// to create: the warning's own advice is "re-mint on a quieter run", and doing
+	// so broke the build. Mint #84 duly turned it red by improving the number to
+	// 46%. A re-mint is a normal operation and must never fail the suite.
+	//
+	// So assert the RULE instead: for whatever is committed, a scenario warns if
+	// and only if it is gated and its sensitivity exceeds the threshold. That is
+	// the behaviour the spec asked to pin, and it survives every future mint.
+	it("warns on exactly the gated scenarios over the threshold", async () => {
 		const committedBaseline = JSON.parse(
 			await import("node:fs/promises").then((fs) =>
 				fs.readFile("./apps/bench/results/baseline.json", "utf8"),
 			),
 		);
 
-		const warnings = sensitivityWarnings(committedBaseline);
-		const animOffWarning = warnings.find((w) => w.id === "update-throughput-anim-off");
+		const scenarios = Object.entries(committedBaseline.scenarios);
+		const expected = scenarios
+			.filter(([, s]) => s.gated && s.sensitivity > 1 + WARN_GATED_DETECTABLE_REGRESSION)
+			.map(([id]) => id)
+			.sort();
 
-		expect(animOffWarning).toBeDefined();
-		expect(animOffWarning.detectablePercent).toBe(81);
+		const warnings = sensitivityWarnings(committedBaseline);
+
+		expect(warnings.map((w) => w.id).sort()).toEqual(expected);
+
+		// Whatever it warns about, the reported percent must be the sensitivity it
+		// was computed from -- a warning that rounds to a different number than the
+		// baseline holds would send someone re-minting against the wrong figure.
+		for (const warning of warnings) {
+			const scenario = committedBaseline.scenarios[warning.id];
+
+			expect(warning.detectablePercent).toBe(Math.round((scenario.sensitivity - 1) * 100));
+		}
 	});
 
-	it("does not warn engine-arrow-tick which is below the threshold", async () => {
+	// The rule test above is near-vacuous while the committed baseline is healthy
+	// (no warnings expected, none produced). This is the part that bites on real
+	// data: if a future mint stopped writing `sensitivity`, sensitivityWarnings
+	// would skip every scenario on its null guard and silently never warn again --
+	// W1 would be dead with a green suite. A gated scenario must carry the number.
+	it("commits a sensitivity for every gated scenario", async () => {
+		const committedBaseline = JSON.parse(
+			await import("node:fs/promises").then((fs) =>
+				fs.readFile("./apps/bench/results/baseline.json", "utf8"),
+			),
+		);
+
+		const missing = Object.entries(committedBaseline.scenarios)
+			.filter(([, s]) => s.gated && s.sensitivity == null)
+			.map(([id]) => id);
+
+		expect(missing).toEqual([]);
+	});
+
+	it("never warns on an ungated scenario, however insensitive", async () => {
 		const committedBaseline = JSON.parse(
 			await import("node:fs/promises").then((fs) =>
 				fs.readFile("./apps/bench/results/baseline.json", "utf8"),
@@ -2111,9 +2153,9 @@ describe("sensitivityWarnings", () => {
 		);
 
 		const warnings = sensitivityWarnings(committedBaseline);
-		const arrowWarning = warnings.find((w) => w.id === "engine-arrow-tick");
+		const ungated = warnings.filter((w) => !committedBaseline.scenarios[w.id].gated);
 
-		expect(arrowWarning).toBeUndefined();
+		expect(ungated).toEqual([]);
 	});
 });
 

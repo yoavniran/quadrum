@@ -57,7 +57,7 @@ on npm and frozen at 9.2.1.
 | 100 position updates, animation on | 16.67 ms | 16.67 ms | 1.00× — parity |
 | Engine arrow re-draw, per tick | 27.78 ms | 27.18 ms | 1.02× — parity |
 | Drag latency, p95 | **19.08 ms** | 19.67 ms | **0.97× — quadrum wins** ✅ |
-| Resize storm, 50 resizes | **0.07 ms** | 0.99 ms | **0.07× — quadrum wins** ✅ |
+| Resize storm, 50 resizes | **0.07 ms** | 0.99 ms | **quadrum ≈ 0.07 ms (below timer resolution) — does no measurable work here** ✅ |
 | Retention after teardown | 0 | 0 | 1.00× — parity |
 | Bundle size, min+brotli | **11.6 kB** | 11.9 kB | **0.97× — quadrum wins** ✅ |
 

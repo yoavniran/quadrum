@@ -1,5 +1,15 @@
 # quadrum
 
+## [0.3.1](https://github.com/yoavniran/quadrum/compare/quadrum@0.3.0...quadrum@0.3.1) (2026-08-19)
+
+
+### Performance
+
+* **core:** cut the anim-off update script cost (W1, W2, W4, W5, W6) ([#73](https://github.com/yoavniran/quadrum/issues/73)) ([81a3abc](https://github.com/yoavniran/quadrum/commit/81a3abc9f6272d1f5a283163fa3ac99cca649e1e))
+* **core:** cut update-path allocation; bench trust work (W1,W3-W7) ([#81](https://github.com/yoavniran/quadrum/issues/81)) ([1b53112](https://github.com/yoavniran/quadrum/commit/1b53112e510bf65b80f9755a1dd42ef7aaddc82b))
+* **core:** drive the piece pass from a changed-square hint ([7430395](https://github.com/yoavniran/quadrum/commit/743039535fe84a117b134bd87b013cc8407c2e90))
+* **core:** drive the piece pass from a changed-square hint (W3) ([#77](https://github.com/yoavniran/quadrum/issues/77)) ([7430395](https://github.com/yoavniran/quadrum/commit/743039535fe84a117b134bd87b013cc8407c2e90))
+
 ## [0.3.0](https://github.com/yoavniran/quadrum/compare/quadrum@0.2.2...quadrum@0.3.0) (2026-08-17)
 
 

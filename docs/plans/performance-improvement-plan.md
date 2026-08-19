@@ -193,14 +193,26 @@ inferred.
 
 Ranked by what is actually blocking. Verified against the tree at mint #84.
 
-**1. The bundle-size tolerance is still relaxed.** `DEFAULT_BUNDLE_TOLERANCE` in
-`.github/scripts/bench-report.mjs` is `0.12`; the spec calls for an absolute `+2%` gate
-(`0.02`). This was widened temporarily and has not been put back. It is now the weakest
-gate in the set, and unlike the timing scenarios its noise floor is not the excuse — a
-bundle measurement is deterministic, so 12% of slack is 12% of unnoticed growth.
+**1. Phase F's size pass is still unbuilt** (the gate half is done). Phase F of
+`update-path-node-churn.md` has two halves: restore the bundle gate, and audit what the
+four phases actually cost in bytes. The gate is restored — `DEFAULT_BUNDLE_TOLERANCE` is
+back to `0.02`, verified inert on the committed run (the bundle sits at −0.1%, and all
+eight scenario verdicts were byte-identical to what `0.12` produced) while failing a
+synthetic +3%, where the old cap passed a 1.3 kB jump untouched. The audit is not done:
+measuring each phase's contribution to the bundle in isolation, and looking for shared
+machinery across the three pools (pieces, squares, marks). The current bundle sits **244
+brotli bytes** under the restored cap, so the audit is what buys headroom back if a later
+phase needs it — that margin is a constraint on the next feature, not a comfort.
 
-**2. `origin/docs/update-path-churn-plan` is a stale remote branch** whose spec is already
-merged. Safe to delete.
+**2. `origin/ci/auto-changeset` is unmerged work awaiting a decision.** It adds
+`write-auto-changeset.mjs` to `release.yml` to backfill changesets for source-touching
+commits that shipped without one — written against changesets machinery this repo does not
+run, since main releases through release-please. So it cannot land as written. The problem
+it describes may still be live under release-please: seven consecutive `perf(core)` PRs
+merged past the changeset warning, leaving the pending release describing a packaging
+change and none of the work that actually moved what consumers run. Either retarget it at
+release-please or delete it deliberately; leaving it is the one option that decides nothing.
+Its tip is `b7c37b5`.
 
 ### Closed since this section was last written
 
@@ -219,6 +231,11 @@ merged. Safe to delete.
   pnpm and vite is its child, so signalling the pid alone reaped the wrapper and orphaned
   the server — which is what produced the 20 held ports.
 - **Release PR #22** is closed.
+- **The stale remote branches are gone.** `docs/update-path-render-cost` (byte-identical to
+  main), `docs/update-path-churn-plan` (a superseded draft; main's version of the spec is
+  485 lines ahead) and `changeset-release/main` (a bot artifact carrying no human work) are
+  deleted. `release-please--branches--main` was deliberately kept — it carries open release
+  PR #74.
 - **CPU-model heterogeneity across mints** is now recorded rather than inferred (W4). Every
   run carries `env.cpuModel`, and the report raises a notice when the runner changes. Three
   generations have been seen so far (AMD EPYC 9V45, Intel Xeon Platinum 8573C, AMD EPYC

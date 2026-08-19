@@ -34,16 +34,12 @@ export const DEFAULT_TOLERANCE = 0.15;
  * Bundle size is gated absolutely rather than by ratio -- it has no runtime
  * noise, and a regression that hits both subjects would cancel out of a ratio.
  *
- * Temporarily relaxed from 0.02 to 0.12 for docs/plans/update-path-node-churn.md.
- * Phase A of that plan cost 155 brotli bytes and only fit under 2% after two
- * rewrites driven purely by size; Phases B-D each add more shipped code than A
- * did, and leaving the tight cap in place would let byte pressure dictate how
- * they are written. The gate still catches a real jump, and a bundle scenario
- * missing from a run is still a hard fail. Phase F of that plan restores 0.02
- * against a freshly minted baseline -- when this constant goes back to 0.02,
- * that reference and this paragraph go with it.
+ * Tight on purpose. Every other gate in this file is loose because measurement
+ * noise forces it to be; this one has no noise to accommodate, so slack here is
+ * not caution, it is unwatched growth. At 12% a 12 kB library could put on 1.4 kB
+ * without anyone being told.
  */
-export const DEFAULT_BUNDLE_TOLERANCE = 0.12;
+export const DEFAULT_BUNDLE_TOLERANCE = 0.02;
 
 /**
  * How far chessground's own absolute timing may drift from baseline before the

@@ -57,12 +57,11 @@ const RE_MINT = "re-mint the baseline: workflow_dispatch on bench.yml with mint_
  * below fail if an entry stops drifting, so the list cannot quietly become
  * permanent.
  */
-const PENDING_REMINT: ReadonlySet<string> = new Set([
-	// update-throughput-anim-on: changed headlineMetric to "update-anim-frame-script-ms"
-	// (was "frame-interval-p95"). The scenario now measures frame script time instead
-	// of frame intervals, which can move with the library. Baseline must be re-minted.
-	"update-throughput-anim-on",
-]);
+// Empty, and that is the healthy state: mint #84 re-minted
+// update-throughput-anim-on onto "update-anim-frame-script-ms", so its entry
+// stopped drifting and the assertion below required its deletion. The list did
+// exactly what it was built to do -- it expired on its own.
+const PENDING_REMINT: ReadonlySet<string> = new Set([]);
 
 describe("committed baseline is in sync with the scenario registry", () => {
 	it("covers exactly the scenarios the registry defines", () => {

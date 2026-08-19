@@ -89,17 +89,21 @@ export function renderSquares(
 
 	// Squares that lost their decoration, and squares that gained one.
 	// Collected first, because both loops below rewrite `els`.
-	for (const sq of els.keys()) {
+	// forEach rather than `for...of` over the map keys: the iterator protocol
+	// allocates a {value, done} object per square, and these walk every
+	// decorated square on every render. An allocation profile of the anim-off
+	// loop charged ~250 kB of iterator objects to this function.
+	els.forEach((_el, sq) => {
 		if (!classes.has(sq)) {
 			staleSquares.push(sq);
 		}
-	}
+	});
 
-	for (const sq of classes.keys()) {
+	classes.forEach((_className, sq) => {
 		if (!els.has(sq)) {
 			freshSquares.push(sq);
 		}
-	}
+	});
 
 	// Hand a stale element straight to a square that needs one, rather than
 	// routing it through the pool.
@@ -147,7 +151,7 @@ export function renderSquares(
 		els.set(freshSquares[i], el);
 	}
 
-	for (const [sq, className] of classes) {
+	classes.forEach((className, sq) => {
 		const el = els.get(sq)!;
 		if (el.hidden) {
 			el.hidden = false;
@@ -157,5 +161,5 @@ export function renderSquares(
 			el.className = className;
 		}
 		placePieceEl(el, sq, state.orientation);
-	}
+	});
 }

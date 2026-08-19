@@ -14,6 +14,33 @@ export function nextFrame(): Promise<number> {
 }
 
 /**
+ * Request a single animation frame and return both the frame timestamp and the
+ * entry time (when our callback was called after any rAF callbacks the library
+ * registered). The frame timestamp is when the frame started; the entry time is
+ * when we entered. The difference measures the library's deferred rAF work in
+ * that frame.
+ */
+export function nextFrameEntry(): Promise<{ timestamp: number; enteredAt: number }> {
+	return new Promise((resolve) => {
+		requestAnimationFrame((timestamp) => {
+			resolve({ timestamp, enteredAt: performance.now() });
+		});
+	});
+}
+
+/**
+ * Calculate frame script time as the sum of synchronous work (t1 - t0) and the
+ * deferred half of the library's rAF work. The deferred part is the time between
+ * the frame start (rafTimestamp) and when our rAF callback entered (enteredAt),
+ * clamped to 0 if our callback entered before the frame timestamp (can happen
+ * at frame boundaries).
+ */
+export function frameScriptMs(syncMs: number, rafTimestamp: number, enteredAt: number): number {
+	const deferredMs = Math.max(0, enteredAt - rafTimestamp);
+	return syncMs + deferredMs;
+}
+
+/**
  * Wait for the browser to paint. Calls nextFrame twice so the browser has
  * painted between the two calls.
  */

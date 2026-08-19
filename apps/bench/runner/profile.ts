@@ -35,6 +35,7 @@ import {
 	aggregateProfile,
 	watchlist,
 	renderTable,
+	WATCH_PATTERNS,
 } from "./profile-aggregate.ts";
 import type { CpuProfile } from "./profile-aggregate.ts";
 
@@ -43,27 +44,6 @@ const __dirname = dirname(__filename);
 
 /** Sampling interval in microseconds. */
 const SAMPLING_INTERVAL_US = 50;
-
-/**
- * The update-path functions the perf plans track. Watching them by name keeps
- * the report useful even when a refactor moves them between bundles.
- */
-const WATCH_PATTERNS: readonly RegExp[] = [
-	/^renderPieces$/,
-	/^renderSquares$/,
-	/^placePieceEl$/,
-	/^placeSquare$/,
-	/^isPlacedAt$/,
-	/^writeTranslate$/,
-	/^setTransform$/,
-	/^setTranslate$/,
-	/^isHeld$/,
-	/^applyOptions$/,
-	/^fenToPieces$/,
-	/^planDiff$/,
-	/^squareIndex$/,
-	/^update$/,
-];
 
 async function main(): Promise<void> {
 	const { values } = parseArgs({

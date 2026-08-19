@@ -14,10 +14,15 @@ import {
 	remeasurableFailures,
 	formatRatio,
 	detectableRegression,
+	sensitivityWarnings,
+	cpuModelNotice,
 	SCHEMA_VERSION,
 	TIMER_RESOLUTION_MS,
 	MIN_GATED_MEDIAN_TICKS,
 	DEFAULT_BUNDLE_TOLERANCE,
+	WARN_GATED_DETECTABLE_REGRESSION,
+	MAX_GATED_DETECTABLE_REGRESSION,
+	SUB_RESOLUTION_TICKS,
 } from "./bench-report.mjs";
 import { percentile, median, medianCi, describe as describeSamples, statisticCi, p95Ci } from "./bench-stats.mjs";
 
@@ -2027,5 +2032,492 @@ describe("remeasurableFailures", () => {
 		};
 
 		expect(remeasurableFailures(gate)).toEqual(["novel"]);
+	});
+});
+
+describe("sensitivityWarnings", () => {
+	it("is exactly half of MAX_GATED_DETECTABLE_REGRESSION", () => {
+		expect(WARN_GATED_DETECTABLE_REGRESSION).toBe(MAX_GATED_DETECTABLE_REGRESSION / 2);
+	});
+
+	it("filters to gated scenarios with sensitivity in the warning band", () => {
+		const testBaseline = baseline({
+			strong: { gated: true, sensitivity: 1.4, headlineMetric: "m" },
+			weak: { gated: true, sensitivity: 1.813, headlineMetric: "m" },
+			demoted: { gated: false, sensitivity: 1.6, headlineMetric: "m" },
+			"no-sensitivity": { gated: true, sensitivity: null, headlineMetric: "m" },
+		});
+
+		const warnings = sensitivityWarnings(testBaseline);
+
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0].id).toBe("weak");
+		expect(warnings[0].sensitivity).toBe(1.813);
+		expect(warnings[0].detectablePercent).toBe(81);
+	});
+
+	it("sorts worst-first by sensitivity", () => {
+		const testBaseline = baseline({
+			a: { gated: true, sensitivity: 1.7, headlineMetric: "m" },
+			b: { gated: true, sensitivity: 1.9, headlineMetric: "m" },
+			c: { gated: true, sensitivity: 1.3, headlineMetric: "m" },
+		});
+
+		const warnings = sensitivityWarnings(testBaseline);
+
+		expect(warnings.map((w) => w.id)).toEqual(["b", "a"]);
+	});
+
+	it("does not warn demoted scenarios", () => {
+		const testBaseline = baseline({
+			"demoted-high": { gated: false, sensitivity: 2.0, headlineMetric: "m" },
+		});
+
+		const warnings = sensitivityWarnings(testBaseline);
+
+		expect(warnings).toHaveLength(0);
+	});
+
+	it("does not warn scenarios with null sensitivity", () => {
+		const testBaseline = baseline({
+			"no-data": { gated: true, sensitivity: null, headlineMetric: "m" },
+		});
+
+		const warnings = sensitivityWarnings(testBaseline);
+
+		expect(warnings).toHaveLength(0);
+	});
+
+	it("matches the committed baseline for anim-off at 81%", async () => {
+		// This is the spec's acceptance criterion: pin against the real baseline
+		const committedBaseline = JSON.parse(
+			await import("node:fs/promises").then((fs) =>
+				fs.readFile("./apps/bench/results/baseline.json", "utf8"),
+			),
+		);
+
+		const warnings = sensitivityWarnings(committedBaseline);
+		const animOffWarning = warnings.find((w) => w.id === "update-throughput-anim-off");
+
+		expect(animOffWarning).toBeDefined();
+		expect(animOffWarning.detectablePercent).toBe(81);
+	});
+
+	it("does not warn engine-arrow-tick which is below the threshold", async () => {
+		const committedBaseline = JSON.parse(
+			await import("node:fs/promises").then((fs) =>
+				fs.readFile("./apps/bench/results/baseline.json", "utf8"),
+			),
+		);
+
+		const warnings = sensitivityWarnings(committedBaseline);
+		const arrowWarning = warnings.find((w) => w.id === "engine-arrow-tick");
+
+		expect(arrowWarning).toBeUndefined();
+	});
+});
+
+describe("renderGateSummary legend", () => {
+	it("contains the legend line with sensitivity thresholds", () => {
+		const gate = {
+			ok: true,
+			overridden: false,
+			results: [
+				{ scenarioId: "mount", status: "pass", sensitivity: 1.3 },
+			],
+		};
+
+		const output = renderGateSummary(gate);
+
+		expect(output).toContain("Sensitivity is the smallest regression");
+		expect(output).toContain(`+${Math.round(WARN_GATED_DETECTABLE_REGRESSION * 100)}%`);
+		expect(output).toContain(`+${Math.round(MAX_GATED_DETECTABLE_REGRESSION * 100)}%`);
+	});
+
+	it("still contains the header row", () => {
+		const gate = {
+			ok: true,
+			overridden: false,
+			results: [],
+		};
+
+		const output = renderGateSummary(gate);
+
+		expect(output).toContain("| Scenario | Status | Sensitivity | Detail |");
+	});
+});
+
+describe("no gate verdict changed (invariant 1)", () => {
+	it("compareToBaseline verdict unchanged", () => {
+		// Build a fixture and ensure verdicts stay the same across changes
+		const testSummary = summary([
+			scenario({
+				id: "mount",
+				gated: true,
+				headlineMetric: "m",
+				metrics: [
+					metric({
+						quadrum: { median: 10, ci95: [9, 11] },
+						chessground: { median: 10, ci95: [9, 11] },
+					}),
+				],
+			}),
+		]);
+
+		const testBaseline = baseline({
+			mount: {
+				gated: true,
+				headlineMetric: "m",
+				unit: "ms",
+				direction: "lower",
+				ratio: 1.0,
+				ratioCi95: [0.9, 1.1],
+				sensitivity: 1.5,
+				quadrum: { median: 10, ci95: [9, 11] },
+				chessground: { median: 10, ci95: [9, 11] },
+				statistic: "median",
+			},
+		});
+
+		const gate = compareToBaseline(testSummary, testBaseline);
+
+		expect(gate.ok).toBe(true);
+		expect(statusOf(gate, "mount")).toBe("pass");
+	});
+});
+
+describe("cpuModelNotice", () => {
+	it("returns null when both models are present and identical", () => {
+		const testSummary = summary([], { env: { cpuModel: "Intel Xeon Platinum 8573C" } });
+		const testBaseline = baseline({}, { env: { cpuModel: "Intel Xeon Platinum 8573C" } });
+
+		const notice = cpuModelNotice(testSummary, testBaseline);
+
+		expect(notice).toBeNull();
+	});
+
+	it("returns known: false when baseline is missing cpuModel", () => {
+		const testSummary = summary([], { env: { cpuModel: "Intel Xeon Platinum 8573C" } });
+		const testBaseline = baseline({}, { env: { cpuModel: null } });
+
+		const notice = cpuModelNotice(testSummary, testBaseline);
+
+		expect(notice).toEqual({
+			comparable: true,
+			known: false,
+			message: expect.stringContaining("not recorded in baseline"),
+		});
+	});
+
+	it("returns known: false when summary is missing cpuModel", () => {
+		const testSummary = summary([], { env: { cpuModel: null } });
+		const testBaseline = baseline({}, { env: { cpuModel: "Intel Xeon Platinum 8573C" } });
+
+		const notice = cpuModelNotice(testSummary, testBaseline);
+
+		expect(notice).toEqual({
+			comparable: true,
+			known: false,
+			message: expect.stringContaining("not recorded in baseline"),
+		});
+	});
+
+	it("returns known: true on a mismatch, naming both models", () => {
+		const testSummary = summary([], { env: { cpuModel: "Intel Xeon Platinum 8573C" } });
+		const testBaseline = baseline({}, { env: { cpuModel: "AMD EPYC 9V45" } });
+
+		const notice = cpuModelNotice(testSummary, testBaseline);
+
+		expect(notice).toEqual({
+			comparable: true,
+			known: true,
+			message: expect.stringContaining("AMD EPYC 9V45"),
+		});
+		expect(notice.message).toContain("Intel Xeon Platinum 8573C");
+	});
+});
+
+describe("makeBaseline records CPU model", () => {
+	it("records cpuModel from the summary", () => {
+		const testSummary = summary([
+			scenario({
+				id: "mount",
+				gated: true,
+				headlineMetric: "m",
+				metrics: [
+					metric({
+						quadrum: { median: 10, ci95: [9, 11] },
+						chessground: { median: 10, ci95: [9, 11] },
+					}),
+				],
+			}),
+		], { env: { cpuModel: "Intel Xeon Platinum 8573C" } });
+
+		const minted = makeBaseline(testSummary);
+
+		expect(minted.env.cpuModel).toBe("Intel Xeon Platinum 8573C");
+	});
+
+	it("records null when the summary has no cpuModel", () => {
+		const testSummary = summary([
+			scenario({
+				id: "mount",
+				gated: true,
+				headlineMetric: "m",
+				metrics: [
+					metric({
+						quadrum: { median: 10, ci95: [9, 11] },
+						chessground: { median: 10, ci95: [9, 11] },
+					}),
+				],
+			}),
+		], { env: { cpuModel: null } });
+
+		const minted = makeBaseline(testSummary);
+
+		expect(minted.env.cpuModel).toBeNull();
+	});
+});
+
+describe("compareToBaseline with CPU mismatch", () => {
+	it("attaches cpuNotice without changing gate.ok or result statuses", () => {
+		const testSummary = summary([
+			scenario({
+				id: "mount",
+				gated: true,
+				headlineMetric: "m",
+				metrics: [
+					metric({
+						quadrum: { median: 10, ci95: [9, 11] },
+						chessground: { median: 10, ci95: [9, 11] },
+					}),
+				],
+			}),
+		], { env: { cpuModel: "Intel Xeon Platinum 8573C" } });
+
+		const testBaseline = baseline({
+			mount: {
+				gated: true,
+				headlineMetric: "m",
+				unit: "ms",
+				direction: "lower",
+				ratio: 1.0,
+				ratioCi95: [0.9, 1.1],
+				sensitivity: 1.5,
+				quadrum: { median: 10, ci95: [9, 11] },
+				chessground: { median: 10, ci95: [9, 11] },
+				statistic: "median",
+			},
+		}, { env: { cpuModel: "AMD EPYC 9V45" } });
+
+		// Gate without CPU notice for comparison
+		const gateWithoutNotice = {
+			ok: true,
+			overridden: false,
+			results: [{ scenarioId: "mount", status: "pass" }],
+		};
+
+		const gateWithNotice = compareToBaseline(testSummary, testBaseline);
+
+		expect(gateWithNotice.ok).toBe(gateWithoutNotice.ok);
+		expect(gateWithNotice.results[0].status).toBe("pass");
+		expect(gateWithNotice.cpuNotice).toBeDefined();
+		expect(gateWithNotice.cpuNotice.known).toBe(true);
+	});
+});
+
+describe("renderGateSummary with CPU notice", () => {
+	it("includes the CPU notice in the output when present", () => {
+		const gate = {
+			ok: true,
+			overridden: false,
+			results: [{ scenarioId: "mount", status: "pass", sensitivity: 1.3 }],
+			cpuNotice: {
+				comparable: true,
+				known: true,
+				message: "CPU model changed: baseline AMD EPYC 9V45 → Intel Xeon Platinum 8573C. Ratios remain comparable; absolute timings do not.",
+			},
+		};
+
+		const output = renderGateSummary(gate);
+
+		expect(output).toContain("CPU model changed");
+		expect(output).toContain("AMD EPYC 9V45");
+		expect(output).toContain("Intel Xeon Platinum 8573C");
+	});
+
+	it("omits the CPU notice when it is null", () => {
+		const baselineOutput = renderGateSummary({
+			ok: true,
+			overridden: false,
+			results: [{ scenarioId: "mount", status: "pass", sensitivity: 1.3 }],
+			cpuNotice: null,
+		});
+
+		const withoutNoticeOutput = renderGateSummary({
+			ok: true,
+			overridden: false,
+			results: [{ scenarioId: "mount", status: "pass", sensitivity: 1.3 }],
+		});
+
+		expect(baselineOutput).toBe(withoutNoticeOutput);
+		expect(baselineOutput).not.toContain("CPU model");
+	});
+});
+
+describe("CPU notice with committed baseline", () => {
+	it("shows the notice when comparing mint #78 against a synthetic EPYC baseline", async () => {
+		const committedBaseline = JSON.parse(
+			await import("node:fs/promises").then((fs) =>
+				fs.readFile("./apps/bench/results/baseline.json", "utf8"),
+			),
+		);
+
+		// Override the CPU model to simulate the old EPYC baseline
+		const epicBaseline = { ...committedBaseline, env: { cpuModel: "AMD EPYC 9V45" } };
+
+		// Create a mock summary with the Intel CPU from mint #78
+		const testSummary = {
+			schemaVersion: SCHEMA_VERSION,
+			env: { cpuModel: "Intel Xeon Platinum 8573C" },
+		};
+
+		const notice = cpuModelNotice(testSummary, epicBaseline);
+
+		expect(notice).toBeDefined();
+		expect(notice.known).toBe(true);
+		expect(notice.message).toContain("AMD EPYC 9V45");
+		expect(notice.message).toContain("Intel Xeon Platinum 8573C");
+	});
+});
+
+describe("formatRatio sub-resolution wins", () => {
+	it("renders a sub-resolution quadrum win with work description", () => {
+		const output = formatRatio(0.069, false, true, { qValue: 0.055, cValue: 0.79 });
+
+		expect(output).toContain("quadrum");
+		expect(output).toContain("does no measurable work");
+		expect(output).toContain("✅");
+		expect(output).not.toContain("×");
+	});
+
+	it("renders a sub-resolution chessground win with work description", () => {
+		const output = formatRatio(1.5, false, true, { qValue: 0.79, cValue: 0.055 });
+
+		expect(output).toContain("chessground");
+		expect(output).toContain("does no measurable work");
+		expect(output).not.toContain("×");
+	});
+
+	it("renders a sub-resolution parity unchanged", () => {
+		const output = formatRatio(1.0, true, true);
+
+		expect(output).toBe("below timer resolution — parity");
+	});
+
+	it("renders an above-resolution ratio unchanged", () => {
+		const output = formatRatio(0.83, false, false);
+
+		expect(output).toContain("0.83×");
+		expect(output).toContain("quadrum wins");
+		expect(output).toContain("✅");
+	});
+
+	it("sub-resolution win text contains no ratio token", () => {
+		const quadrumWin = formatRatio(0.069, false, true, { qValue: 0.055, cValue: 0.79 });
+		const chessgroundWin = formatRatio(1.5, false, true, { qValue: 0.79, cValue: 0.055 });
+
+		expect(quadrumWin).not.toMatch(/\d+\.\d+×/);
+		expect(chessgroundWin).not.toMatch(/\d+\.\d+×/);
+	});
+});
+
+describe("renderHeadlineTable sub-resolution rendering", () => {
+	it("renders a resize-storm-shaped sub-resolution win without magnitude", () => {
+		const testSummary = summary([
+			scenario({
+				id: "resize-storm",
+				title: "Resize Storm",
+				gated: true,
+				headlineMetric: "m",
+				metrics: [
+					metric({
+						key: "m",
+						quadrum: { median: 0.055, ci95: [0.05, 0.06] },
+						chessground: { median: 0.79, ci95: [0.75, 0.83] },
+					}),
+				],
+			}),
+		]);
+
+		const output = renderHeadlineTable(testSummary);
+
+		expect(output).toContain("does no measurable work");
+		expect(output).not.toContain("0.07×");
+	});
+
+	it("renders an above-resolution mount-shaped metric unchanged", () => {
+		const testSummary = summary([
+			scenario({
+				id: "mount",
+				title: "Mount a board",
+				gated: true,
+				headlineMetric: "m",
+				metrics: [
+					metric({
+						key: "m",
+						quadrum: { median: 2.885, ci95: [2.8, 2.97] },
+						chessground: { median: 3.455, ci95: [3.35, 3.56] },
+					}),
+				],
+			}),
+		]);
+
+		const output = renderHeadlineTable(testSummary);
+
+		// Should render as a bare ratio, not with the sub-resolution text
+		expect(output).toContain("×");
+		expect(output).toContain("quadrum wins");
+		expect(output).not.toContain("does no measurable work");
+	});
+});
+
+describe("gate verdict untouched by sub-resolution formatting", () => {
+	it("returns the same ok and statuses with or without sub-resolution context", () => {
+		const testSummary = summary([
+			scenario({
+				id: "resize",
+				gated: true,
+				headlineMetric: "m",
+				metrics: [
+					metric({
+						quadrum: { median: 0.055, ci95: [0.05, 0.06] },
+						chessground: { median: 0.79, ci95: [0.75, 0.83] },
+					}),
+				],
+			}),
+		]);
+
+		const testBaseline = baseline({
+			resize: {
+				gated: true,
+				headlineMetric: "m",
+				unit: "ms",
+				direction: "lower",
+				ratio: 0.069,
+				ratioCi95: [0.065, 0.073],
+				sensitivity: 1.5,
+				quadrum: { median: 0.055, ci95: [0.05, 0.06] },
+				chessground: { median: 0.79, ci95: [0.75, 0.83] },
+				statistic: "median",
+			},
+		});
+
+		const gate = compareToBaseline(testSummary, testBaseline);
+
+		// The gate verdict should be unchanged - the sub-resolution formatting
+		// only affects display, not the gating logic
+		expect(gate.ok).toBe(true);
+		expect(statusOf(gate, "resize")).toBe("pass");
 	});
 });

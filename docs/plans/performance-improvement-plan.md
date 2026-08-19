@@ -141,10 +141,12 @@ against a control measured alongside it — so **the p95 tail did come down**, a
 drift. The single-pair comparison would not have shown this honestly: chessground's own
 numbers moved 20–30% between the first two arms, which is why the third arm exists.
 
-Two things the data does **not** support. First, the **CI half-width did not close**:
-quadrum's per-update p95 interval was 0.211 / 0.260 / 0.245 ms across the three arms —
-flat. The spec asked for p95 *and* half-width to close toward chessground's; only the p95
-did. Second, the spread between the two fixed arms is nearly as large as the effect on the
+Two things these local numbers do **not** support. First, the **half-width did not close
+on the laptop**: quadrum's per-update p95 interval was 0.211 / 0.260 / 0.245 ms across the
+three arms — flat. The spec asked for p95 *and* half-width to close toward chessground's;
+here, only the p95 did. (This held for the laptop A/B/A and was written up as the finding.
+A later CI mint measured the durable quantity and found otherwise — see the correction
+below.) Second, the spread between the two fixed arms is nearly as large as the effect on the
 total-script ratio (0.902 vs 0.775), so the direction is solid but **no magnitude should be
 quoted from these local numbers**. `update-total-layout-ms` did not move at all
 (ratio 0.85 / 0.86 / 0.84), as expected — nothing here touches the DOM-write path.
@@ -152,56 +154,76 @@ quoted from these local numbers**. `update-total-layout-ms` did not move at all
 None of these numbers feed the gate. The committed baseline is CI hardware and is not
 comparable to a laptop; a re-mint on CI is what would move the gated figure.
 
+**Correction — mint #84: on CI, the half-width did close.** The re-mint after W5/W6 landed
+(31 repetitions, same as mint #78) put `update-throughput-anim-off`'s ratio confidence
+interval at **[0.808, 1.200]**, against **[0.729, 1.539]** at mint #78 — a half-width of
+**±0.196 against ±0.405, roughly halved**. W1's sensitivity figure moved with it, from
+**+81% to +46%**, taking the scenario below the warning threshold: it now detects a
+regression a little under half the size of the smallest one it could see before.
+
+This does not make the paragraph above wrong about what it measured. The laptop reading was
+quadrum's *absolute* p95 interval in milliseconds; the mint's is the *ratio* interval, which
+is the quantity that survives a runner change and the only one the gate consults. They are
+different numbers, and the ratio is the better measurement of the two — so the spec's ask,
+that the half-width close, is met on the measurement that counts, and was simply not
+visible at 15 repetitions on a noisy laptop.
+
+Two things this still does not license. The interval **contains 1.0**, so anim-off is
+formally **parity with chessground, not a win**, and must not be published as one despite
+the point estimate crossing to quadrum's side (1.107 → 0.922). And chessground's own
+absolute median moved (10.19 → 11.50 ms) across a runner change to AMD EPYC 7763 — the
+cross-mint comparison holds for ratios only, which is exactly the failure W4's recorded
+`env.cpuModel` exists to make visible.
+
 ---
 
 ## Published numbers
 
 The README headline block is generated from `apps/bench/results/latest.json` by the
-nightly CI. It is regenerated from mint #78 (post-W3, post-#77), the latest at the time
-this document was updated. Mint #75 (pre-W3) and mint #78 are the two in play; **absolute
-milliseconds are not comparable between them** (different runners: AMD EPYC 9V45 vs Intel
-Xeon Platinum 8573C). Ratios are durable across runner changes.
+nightly CI. It currently comes from the scheduled run of 2026-08-19 on AMD EPYC 7763,
+post-W1–W7 and post-mint #84. Three runner generations are now in play across the runs this
+document cites — AMD EPYC 9V45, Intel Xeon Platinum 8573C, AMD EPYC 7763 — so **absolute
+milliseconds are not comparable between them**. Ratios are durable across runner changes,
+and since W4 each run records its `env.cpuModel` so the change is visible rather than
+inferred.
 
 ---
 
 ## Open items
 
-Ranked by what is actually blocking.
+Ranked by what is actually blocking. Verified against the tree at mint #84.
 
-**1. Anim-off gate sensitivity is weak.** The committed baseline's `update-throughput-anim-off`
-sensitivity is **1.813** — only a **+81% regression** is detectable in the gated metric. The
-baseline was minted on a favourable run and the wide interval reflects true measurement noise
-on a vsync-locked scenario. This programme's `bench-trust-and-update-tail.md` (W1–W2) adds a
-warning band so weak gates are visible at mint time rather than discovered during a PR run.
-The gate still gates; the warning is a notice that it is near its useless limit.
-
-**2. Anim-off metric moved from frame-interval to frame-script per-frame work.** The frame-interval
-metrics are vsync-locked in headless and cannot move with the library. The new
-`update-throughput-anim-on` headline metric measures per-frame script time instead, which does move
-with a regression. The scenario stays ungated (the 3-repetition interval is wide), but the number
-can now serve as an advisory signal of an anim-on regression the gate alone would miss.
-
-**3. The bundle-size tolerance is still relaxed.** `DEFAULT_BUNDLE_TOLERANCE` in
+**1. The bundle-size tolerance is still relaxed.** `DEFAULT_BUNDLE_TOLERANCE` in
 `.github/scripts/bench-report.mjs` is `0.12`; the spec calls for an absolute `+2%` gate
-(`0.02`). This was widened temporarily and has not been put back.
+(`0.02`). This was widened temporarily and has not been put back. It is now the weakest
+gate in the set, and unlike the timing scenarios its noise floor is not the excuse — a
+bundle measurement is deterministic, so 12% of slack is 12% of unnoticed growth.
 
-**4. The bench runner leaks its preview server.** When a run errors out,
-`apps/bench/runner/server.ts` leaves its `vite preview` process alive holding a port. As
-of 2026-08-16 all 20 ports in the 5473–5492 range were held by orphans, the oldest ~15
-hours, which makes the runner unusable locally until they are killed by hand. The runner
-needs to tear the server down on the error path.
-
-**5. Release PR #22 has been open since 2026-08-12** (`quadrum@0.3.0`,
-`quadrum-react@0.3.0`). Everything since has shipped under `0.2.2`.
-
-**6. `origin/docs/update-path-churn-plan` is a stale remote branch** whose spec is already
+**2. `origin/docs/update-path-churn-plan` is a stale remote branch** whose spec is already
 merged. Safe to delete.
 
-**7. CPU-model heterogeneity across mints.** Mint #75 ran on AMD EPYC 9V45, mint #78 on Intel
-Xeon Platinum 8573C. `engine-arrow-tick` halved in absolute terms for both subjects (26.8 → 14.9 ms
-quadrum, 27.3 → 15.9 ms chessground) while the ratio moved only 4%. The `bench-trust-and-update-tail.md`
-spec (W4) adds CPU-model recording and a notice when the runner changes, so future drifts can be
-diagnosed without hand-diffing baseline.json.
+### Closed since this section was last written
+
+- **Anim-off gate sensitivity was weak** (was +81% detectable). Mint #84 brought it to
+  **+46%**, below W1's warning threshold, and W1 now surfaces the figure at mint time
+  rather than leaving it to be discovered during a PR run. See the correction above.
+- **The anim-off metric moved from frame-interval to per-frame script time** (W6). The
+  frame-interval metrics are vsync-locked in headless and cannot move with the library.
+  Mint #84 produced the metric's first real reading, **1.622** — the old `1.000` was the
+  dead vsync-locked metric pinned at parity by construction, so the two are not comparable
+  and this is not a regression. The scenario stays correctly ungated (sensitivity 1.44).
+- **The bench runner leaked its preview server.** `apps/bench/runner/server.ts` now signals
+  the child's whole process group on the start-failure path, and registers `exit`/`SIGINT`/
+  `SIGTERM` handlers as a backstop so a crash or Ctrl-C cannot orphan a server holding a
+  port. Group-signalling is the part that matters: `pnpm exec` means the spawned process is
+  pnpm and vite is its child, so signalling the pid alone reaped the wrapper and orphaned
+  the server — which is what produced the 20 held ports.
+- **Release PR #22** is closed.
+- **CPU-model heterogeneity across mints** is now recorded rather than inferred (W4). Every
+  run carries `env.cpuModel`, and the report raises a notice when the runner changes. Three
+  generations have been seen so far (AMD EPYC 9V45, Intel Xeon Platinum 8573C, AMD EPYC
+  7763); the underlying hazard is unchanged — absolute milliseconds never survive a runner
+  change, ratios do — but it is now visible at the point of comparison.
 
 ---
 

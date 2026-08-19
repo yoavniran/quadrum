@@ -181,9 +181,13 @@ metrics are vsync-locked in headless and cannot move with the library. The new
 with a regression. The scenario stays ungated (the 3-repetition interval is wide), but the number
 can now serve as an advisory signal of an anim-on regression the gate alone would miss.
 
-**3. The bundle-size tolerance is still relaxed.** `DEFAULT_BUNDLE_TOLERANCE` in
-`.github/scripts/bench-report.mjs` is `0.12`; the spec calls for an absolute `+2%` gate
-(`0.02`). This was widened temporarily and has not been put back.
+**3. Phase F's size pass is still unbuilt** (the gate half is done). Phase F of
+`update-path-node-churn.md` has two halves: restore the bundle gate, and audit what the
+four phases actually cost in bytes. The gate is restored — `DEFAULT_BUNDLE_TOLERANCE` is
+back to `0.02` — but the audit is not: measuring each phase's contribution to the bundle in
+isolation, and looking for shared machinery across the three pools (pieces, squares, marks).
+The current bundle sits 244 brotli bytes under the restored cap, so the audit is what buys
+headroom back if a later phase needs it.
 
 **4. The bench runner leaks its preview server.** When a run errors out,
 `apps/bench/runner/server.ts` leaves its `vite preview` process alive holding a port. As

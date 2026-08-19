@@ -78,8 +78,34 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Playwright browser
+      # The browser binary is the cacheable half of the install; the `--with-deps`
+      # apt-get is not, and it is the half that goes wrong -- it re-resolves ~40
+      # font and library packages off the Ubuntu mirror on every single run, and
+      # a slow mirror has turned this step into an 8-minute stall. So: restore
+      # the binary from cache, and only pay for apt when there was nothing to
+      # restore. The runner image already ships the shared libraries Chromium
+      # links against; the packages we skip on a hit are almost entirely fonts,
+      # and no spec here asserts on pixels.
+      - name: Cache Playwright browser
+        id: playwright-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          # Keyed on the lockfile because that is what pins the Playwright
+          # version, and the browser build is chosen by that version.
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      # Two steps rather than one with a conditional argument: in a GitHub
+      # expression the empty string is falsy, so the obvious
+      # `cache-hit && '' || '--with-deps'` collapses to `--with-deps` on a hit
+      # and silently buys nothing.
+      - name: Install Playwright browser and its system dependencies
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install --with-deps chromium
+
+      - name: Verify the cached Playwright browser
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install chromium
 
       # Playwright's webServer starts the demo on 5273 and tears it down after.
       - name: End-to-end tests

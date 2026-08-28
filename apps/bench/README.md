@@ -464,6 +464,25 @@ from rotting into a marketing claim:
 - A **completeness check** fails if the rendered scenario set differs from the results set. There
   is no supported way to publish with the losing rows removed.
 
+**The nightly does not run every night.** It measures when something that can move a number has
+landed since the published run, and otherwise only once the published numbers reach 30 days old
+(`NIGHTLY_REFRESH_DAYS`). A full nightly is 31 repetitions across 8 scenarios and costs the better
+part of half an hour, and re-measuring an unchanged `main` buys a number nobody reads.
+
+Two details of that rule are worth knowing before you touch it:
+
+- **"Changed" means the lockfile too.** chessground, chromium and vite are all pinned there, and a
+  bump to any of them moves a published number without touching `packages/*/src`.
+- **The 30 days is not a round number, it is a safety margin.** This is the only run allowed to
+  refresh the published block, so the skip is what decides whether the README ages — and staleness
+  warns at 45 days and *fails* at 120, in a check that runs on every event with no paths filter.
+  Widen the skip past the warn threshold and the first symptom is an unrelated PR going red over
+  numbers nobody edited. Raise `NIGHTLY_REFRESH_DAYS` only alongside `FRESHNESS_WARN_DAYS`; a test
+  asserts the ordering.
+
+Anything the decision cannot settle — no published run yet, a commit a rewritten history no longer
+contains, a crash in the decision job itself — measures.
+
 And, upstream of all of them: `run.publishable` is false for anything but a scheduled or
 `main`-push run on a clean tree, and `renderHeadlineTable` **throws** on a non-publishable run. PR
 runs are noisy and re-runnable; letting one write the README would allow re-rolling until the

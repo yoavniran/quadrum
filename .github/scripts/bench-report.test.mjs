@@ -11,6 +11,7 @@ import {
 	formatValue,
 	escapeCell,
 	guardBaselineChange,
+	decideNightlyRun,
 	remeasurableFailures,
 	formatRatio,
 	detectableRegression,
@@ -23,6 +24,8 @@ import {
 	WARN_GATED_DETECTABLE_REGRESSION,
 	MAX_GATED_DETECTABLE_REGRESSION,
 	SUB_RESOLUTION_TICKS,
+	NIGHTLY_REFRESH_DAYS,
+	FRESHNESS_WARN_DAYS,
 } from "./bench-report.mjs";
 import { percentile, median, medianCi, describe as describeSamples, statisticCi, p95Ci } from "./bench-stats.mjs";
 
@@ -1190,6 +1193,79 @@ describe("guardBaselineChange", () => {
 	it("does not mistake a test or a doc for library source", () => {
 		expect(guardBaselineChange(["packages/core/test/board.test.ts", BASELINE]).ok).toBe(true);
 		expect(guardBaselineChange(["docs/plans/benchmarks-vs-chessground.md", BASELINE]).ok).toBe(true);
+	});
+});
+
+describe("decideNightlyRun", () => {
+	const PUBLISHED = "2026-08-01T00:00:00.000Z";
+	const at = (days) => Date.parse(PUBLISHED) + days * 24 * 60 * 60 * 1000;
+	const decide = (files, days = 1) => decideNightlyRun(files, PUBLISHED, at(days));
+
+	it("skips a quiet night", () => {
+		const decision = decide([]);
+
+		expect(decision.run).toBe(false);
+		expect(decision.reason).toMatch(/skipping/);
+	});
+
+	it("measures when library source moved", () => {
+		expect(decide(["packages/core/src/board.ts"]).run).toBe(true);
+	});
+
+	it("measures when the bench app or its harness moved", () => {
+		expect(decide(["apps/bench/src/scenarios/mount.ts"]).run).toBe(true);
+		expect(decide(["apps/bench/runner/run.ts"]).run).toBe(true);
+		expect(decide([".github/scripts/bench-report.mjs"]).run).toBe(true);
+		expect(decide([".github/scripts/write-bench-report.mjs"]).run).toBe(true);
+		expect(decide([".github/workflows/bench.yml"]).run).toBe(true);
+	});
+
+	it("measures when the lockfile moved, which no paths filter would catch", () => {
+		// chessground, chromium and vite are all pinned there, and a bump to any
+		// of them moves a published number without touching packages/*/src.
+		expect(decide(["pnpm-lock.yaml"]).run).toBe(true);
+	});
+
+	it("ignores a change that cannot move a number", () => {
+		expect(decide(["README.md", "docs/plans/benchmarks-vs-chessground.md"]).run).toBe(false);
+		expect(decide(["packages/core/test/board.test.ts", "e2e/board.spec.ts"]).run).toBe(false);
+	});
+
+	it("ignores the nightly's own committed output", () => {
+		// The refresh PR commits latest.json back to main. Counted as an input,
+		// it would dirty the tree for the next night and the skip would never
+		// fire twice in a row.
+		expect(decide(["apps/bench/results/latest.json", "README.md"]).run).toBe(false);
+		expect(decide(["apps/bench/results/baseline.json"]).run).toBe(false);
+	});
+
+	it("measures anyway once the published numbers approach the warn threshold", () => {
+		// Otherwise a long quiet spell ages the README into the drift job's
+		// warning and eventually its hard failure, which reddens every PR.
+		expect(decide([], NIGHTLY_REFRESH_DAYS - 1).run).toBe(false);
+		expect(decide([], NIGHTLY_REFRESH_DAYS).run).toBe(true);
+		expect(decide([], NIGHTLY_REFRESH_DAYS + 1).reason).toMatch(/days old/);
+	});
+
+	it("refreshes well before the drift job would warn, let alone fail", () => {
+		expect(NIGHTLY_REFRESH_DAYS).toBeLessThan(FRESHNESS_WARN_DAYS);
+	});
+
+	it("measures when there is no published run to compare against", () => {
+		expect(decideNightlyRun([], null, at(0)).run).toBe(true);
+		expect(decideNightlyRun([], undefined, at(0)).run).toBe(true);
+	});
+
+	it("measures rather than skips on an unparseable published timestamp", () => {
+		expect(decideNightlyRun([], "not-a-date", at(0)).run).toBe(true);
+	});
+
+	it("names the offending files without pasting a whole release diff", () => {
+		const many = Array.from({ length: 9 }, (_, i) => `packages/core/src/f${i}.ts`);
+		const decision = decide(many);
+
+		expect(decision.changed).toHaveLength(9);
+		expect(decision.reason).toMatch(/and 4 more/);
 	});
 });
 

@@ -28,6 +28,11 @@
  *   guard-baseline --files <changed-files.txt>
  *     -> fails a PR that updates the baseline alongside packages/ * /src without
  *        the bench-rebaseline label.
+ *
+ *   should-run --files <changed-files.txt> [--published <results.json>]
+ *     -> decides whether tonight's scheduled run is worth measuring. Always
+ *        exits 0 -- this is a decision, not a verdict -- and writes run=true|false
+ *        to GITHUB_OUTPUT.
  */
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import {
@@ -40,6 +45,7 @@ import {
 	spliceMarkers,
 	checkFreshness,
 	guardBaselineChange,
+	decideNightlyRun,
 	remeasurableFailures,
 	sensitivityWarnings,
 	OVERRIDE_LABEL,
@@ -131,7 +137,7 @@ function emit(path, content) {
 
 function usage() {
 	throw new Error(
-		`unknown mode "${mode}" -- expected summarize | gate | baseline | publish | check | guard-baseline`,
+		`unknown mode "${mode}" -- expected summarize | gate | baseline | publish | check | guard-baseline | should-run`,
 	);
 }
 
@@ -285,6 +291,36 @@ if (mode === "summarize") {
 	if (!verdict.ok) {
 		process.exit(1);
 	}
+} else if (mode === "should-run") {
+	const filesPath = flag("files");
+
+	if (!filesPath) {
+		throw new Error("usage: write-bench-report.mjs should-run --files <changed-files.txt> [--published <results.json>]");
+	}
+
+	const files = readFileSync(filesPath, "utf8")
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean);
+
+	// A missing or unreadable published run is not an error here: it is the
+	// before-the-first-nightly state, and decideNightlyRun measures when it
+	// cannot tell. Reading it defensively keeps "the file is corrupt" on the
+	// same side as "the file is absent" -- both measure, neither breaks the
+	// schedule.
+	let publishedStartedAt = null;
+
+	try {
+		publishedStartedAt = readJson(flag("published") ?? "apps/bench/results/latest.json").run?.startedAt ?? null;
+	} catch {
+		publishedStartedAt = null;
+	}
+
+	const decision = decideNightlyRun(files, publishedStartedAt, Date.now());
+
+	console.log(decision.reason);
+	stepOutput("run", decision.run ? "true" : "false");
+	stepSummary(`### Nightly benchmark\n\n${decision.run ? "▶️" : "⏭️"} ${decision.reason}`);
 } else {
 	usage();
 }

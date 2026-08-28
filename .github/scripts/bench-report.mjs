@@ -1360,6 +1360,103 @@ export const REBASELINE_LABEL = "bench-rebaseline";
 export const OVERRIDE_LABEL = "bench-override";
 
 /**
+ * Days of an unchanged main after which the nightly measures anyway.
+ *
+ * Below FRESHNESS_WARN_DAYS on purpose, and by a wide margin: the nightly is the
+ * only run that may refresh the published block -- `publish` is schedule-only --
+ * so the skip below is what decides whether the README ages. Letting it run up
+ * to the warn threshold would mean the first symptom of the skip working too
+ * well is a warning in the drift job, and the first symptom past
+ * FRESHNESS_FAIL_DAYS is every PR in the repo going red over numbers nobody
+ * touched.
+ */
+export const NIGHTLY_REFRESH_DAYS = 30;
+
+/**
+ * Files whose change can move a published number. Deliberately different from
+ * bench.yml's `paths:` filter in both directions.
+ *
+ * Wider: pnpm-lock.yaml. The measurement is a comparison against a pinned
+ * chessground, run in a pinned chromium and built by a pinned vite -- all of
+ * which arrive through the lockfile, and none of which touch packages/ * /src.
+ *
+ * Narrower: apps/bench/results/ is excluded, because it is this workflow's own
+ * output. The nightly commits latest.json back through the refresh PR, so
+ * counting it as an input would mean every published run dirties the tree for
+ * the next night and the skip could never fire twice in a row.
+ *
+ * @type {readonly RegExp[]}
+ */
+const MEASUREMENT_INPUTS = [
+	/^packages\/[^/]+\/src\//,
+	/^apps\/bench\/(?!results\/)/,
+	/^pnpm-lock\.yaml$/,
+	/^\.github\/workflows\/bench\.yml$/,
+	/^\.github\/scripts\/(bench-[^/]+|write-bench-report)\.mjs$/,
+];
+
+/**
+ * Whether tonight's scheduled run is worth its half hour.
+ *
+ * "Nothing changed" is not on its own a reason to skip a benchmark: it is a
+ * measurement rather than a build, the same source measures differently on a
+ * different runner, and that spread is what the gate's intervals are calibrated
+ * against. What makes the skip worth taking anyway is the cost, and what makes
+ * it safe is the freshness floor -- together they turn the nightly from "every
+ * night" into "when the code moved, or when the published numbers are getting
+ * old", which is the same evidence at a fraction of the runner minutes.
+ *
+ * Undecidable inputs measure. A missing or unparseable timestamp is the
+ * before-the-first-publish case, and skipping there would mean the first
+ * publishable run never happens.
+ *
+ * @param {readonly string[]} changedFiles repo-relative paths changed since the published run
+ * @param {string | null | undefined} publishedStartedAt ISO start time of the published run
+ * @param {number | Date} now
+ * @returns {{ run: boolean, reason: string, changed: string[], ageDays: number }}
+ */
+export function decideNightlyRun(changedFiles, publishedStartedAt, now) {
+	const changed = changedFiles.filter((file) => MEASUREMENT_INPUTS.some((pattern) => pattern.test(file)));
+	const freshness = publishedStartedAt
+		? checkFreshness(publishedStartedAt, now)
+		: { ageDays: NaN, message: "no published run to compare against" };
+
+	if (!Number.isFinite(freshness.ageDays)) {
+		return { run: true, reason: `measuring: ${freshness.message}`, changed, ageDays: NaN };
+	}
+
+	const ageDays = freshness.ageDays;
+
+	if (changed.length > 0) {
+		const shown = changed.slice(0, 5).join(", ");
+		const rest = changed.length > 5 ? `, and ${changed.length - 5} more` : "";
+
+		return {
+			run: true,
+			reason: `measuring: ${changed.length} file(s) that can move a number changed since the published run (${shown}${rest})`,
+			changed,
+			ageDays,
+		};
+	}
+
+	if (ageDays >= NIGHTLY_REFRESH_DAYS) {
+		return {
+			run: true,
+			reason: `measuring: nothing that can move a number has changed, but the published numbers are ${Math.round(ageDays)} days old (refresh at ${NIGHTLY_REFRESH_DAYS}, warn at ${FRESHNESS_WARN_DAYS})`,
+			changed,
+			ageDays,
+		};
+	}
+
+	return {
+		run: false,
+		reason: `skipping: nothing that can move a number has changed since the published run, and its numbers are only ${Math.round(ageDays)} days old (refresh at ${NIGHTLY_REFRESH_DAYS})`,
+		changed,
+		ageDays,
+	};
+}
+
+/**
  * The one diff that hides from every other check: a regression landing in the
  * same PR as the baseline update that accepts it. Every other gate in the repo
  * reads green for that PR, because the new baseline is what it is compared to.

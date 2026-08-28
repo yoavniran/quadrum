@@ -14,7 +14,10 @@ name: Benchmarks
 #   push to main
 #     -> blocking, gated scenarios only
 #   nightly
-#     -> all 8 scenarios, publishable, never blocks, opens a refresh PR
+#     -> all 8 scenarios, publishable, never blocks, opens a refresh PR --
+#        unless nothing that can move a number has changed since the published
+#        run and those numbers are still fresh, in which case it skips (see
+#        should-run)
 #   workflow_dispatch
 #     -> full run at the repetitions you type; with mint_baseline, also opens a
 #        PR committing the run as the gate baseline plus its raw evidence
@@ -76,6 +79,62 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Schedule only: decides whether tonight's nightly would measure anything new.
+  # A full nightly is 31 repetitions across 8 scenarios and costs the better part
+  # of half an hour of runner time, and re-measuring a main that has not moved
+  # buys a number nobody will read.
+  #
+  # The two halves of the rule are both load-bearing, and the second is the one
+  # that looks removable and is not. Skipping on "main did not move" alone would
+  # let the published block age, because this is the only run allowed to refresh
+  # it -- and the drift job fails outright once those numbers pass
+  # FRESHNESS_FAIL_DAYS, on every event, with no paths filter. That failure would
+  # land on unrelated PRs, over numbers nobody edited, in a job whose message
+  # points at the README rather than at here. So the skip expires: see
+  # NIGHTLY_REFRESH_DAYS in bench-report.mjs.
+  #
+  # Everything undecidable measures. This job going red does not stop the
+  # nightly -- `bench` reads its output as "not false" precisely so that a
+  # failure here cannot silently cancel the schedule.
+  should-run:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - name: Checkout
+        # fetch-depth: 0 -- the published run's commit is as old as the last
+        # nightly that published, which a shallow clone will not contain.
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Decide whether there is anything new to measure
+        id: decide
+        run: |
+          # The published run records the commit it measured, so the diff needs
+          # no state file of its own -- the evidence is the state.
+          sha="$(node -p "(require('./apps/bench/results/latest.json').env || {}).gitSha || ''" 2>/dev/null || true)"
+
+          # Nothing published yet, or a commit this clone cannot resolve because
+          # history was rewritten under it. Either way the comparison is
+          # undecidable, and an undecidable comparison measures.
+          if [ -z "$sha" ] || ! git cat-file -e "${sha}^{commit}" 2>/dev/null; then
+            echo "::notice::No resolvable published commit to diff against; measuring."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git diff --name-only "$sha" HEAD > changed-files.txt
+          node .github/scripts/write-bench-report.mjs should-run \
+            --files changed-files.txt \
+            --published apps/bench/results/latest.json
+
   # Fails a PR that updates the gate baseline in the same change as library
   # source. That single diff is invisible to every other check in the repo,
   # because the new baseline is what the gate compares against.
@@ -130,6 +189,14 @@ jobs:
             apps/bench/results/latest.json --readme README.md
 
   bench:
+    needs: should-run
+    # `!= 'false'` rather than `== 'true'`, and `!cancelled()` rather than
+    # letting `needs` imply success. should-run is skipped for every event except
+    # the schedule, and a skipped job's output is the empty string -- so only an
+    # explicit "false" from a decision that actually ran can stop the benchmark.
+    # A crash in should-run measures, which is the same fail-open rule the
+    # decision itself follows.
+    if: ${{ !cancelled() && needs.should-run.outputs.run != 'false' }}
     runs-on: ubuntu-latest
     outputs:
       # Read by mint-baseline, which runs even when the gate went red -- so the

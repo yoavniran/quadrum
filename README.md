@@ -52,16 +52,16 @@ on npm and frozen at 9.2.1.
 <!-- bench:headline:start -->
 | Scenario | quadrum | chessground 10.1.1 | Ratio |
 | --- | --- | --- | --- |
-| Mount a full board | **2.42 ms** | 3.11 ms | **0.78× — quadrum wins** ✅ |
-| 100 position updates, animation off | 10.20 ms | 10.99 ms | 0.93× — parity |
-| 100 position updates, animation on | 2.06 ms | 1.46 ms | 1.42× — **chessground wins** |
-| Engine arrow re-draw, per tick | 28.12 ms | 27.14 ms | 1.04× — parity |
-| Drag latency, p95 | **18.82 ms** | 19.35 ms | **0.97× — quadrum wins** ✅ |
-| Resize storm, 50 resizes | **0.07 ms** | 0.98 ms | **quadrum ≈ 0.07 ms (below timer resolution) — does no measurable work here** ✅ |
+| Mount a full board | **2.60 ms** | 3.22 ms | **0.81× — quadrum wins** ✅ |
+| 100 position updates, animation off | 7.73 ms | 10.11 ms | 0.76× — parity |
+| 100 position updates, animation on | 1.48 ms | 1.07 ms | 1.38× — **chessground wins** |
+| Engine arrow re-draw, per tick | **15.55 ms** | 18.81 ms | **0.83× — quadrum wins** ✅ |
+| Drag latency, p95 | **19.42 ms** | 19.92 ms | **0.98× — quadrum wins** ✅ |
+| Resize storm, 50 resizes | **0.05 ms** | 0.79 ms | **quadrum ≈ 0.05 ms (below timer resolution) — does no measurable work here** ✅ |
 | Retention after teardown | 0 | 0 | 1.00× — parity |
 | Bundle size, min+brotli | **11.6 kB** | 11.9 kB | **0.98× — quadrum wins** ✅ |
 
-*Medians. Measured 2026-08-20 on linux/x64 (4 vCPU AMD EPYC 7763 64-Core Processor), headless Chromium 151.0.7922.34, CPU throttled 4×, 31 repetitions interleaved. quadrum `0.3.1` @ `693f2b1` vs chessground `10.1.1`. "Parity" means the 95% confidence intervals overlap — a difference too small to claim.*
+*Medians. Measured 2026-08-28 on linux/x64 (4 vCPU AMD EPYC 9V74 80-Core Processor), headless Chromium 151.0.7922.34, CPU throttled 4×, 31 repetitions interleaved. quadrum `0.3.1` @ `cd3470c` vs chessground `10.1.1`. "Parity" means the 95% confidence intervals overlap — a difference too small to claim.*
 
 - CPU throttle rate: 4
 - Headless has no real vsync; frame-derived metrics are advisory

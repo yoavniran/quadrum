@@ -123,9 +123,24 @@ ever moves a piece element out of band. Prefer an explicit epoch:
   the element under `Symbol("quadrum.placement")`, and already carries `square`).
 - A survivor is skipped when `record.square === square && record.epoch === epoch`. Two
   number/string compares against one property read, versus the current six-function chain.
+- **The skip elides the placement only, never the bookkeeping.** A skipped survivor still
+  gets its `ALIVE` tick stamp and still increments `survivors` — otherwise PASS 2 reads it
+  as vacated and removes a live element, exactly the stranded-element failure the long
+  comments in PASS 3 exist to prevent. W3 later restates the same bookkeeping, so getting
+  this wording right here is load-bearing twice.
 
 The epoch makes the invariant *enforced* rather than *assumed*, and it gives the animation
 path a one-line way to opt out if it ever needs to.
+
+**What the epoch cannot see.** The epoch only guards writers that go through
+`placement.ts`. A future `el.style.transform = ...` write anywhere else bypasses the record
+and the epoch silently — the record goes stale and W1 skips a piece that has visually
+moved. Today every writer is routed correctly (`board.ts` animation uses `setTransform`,
+drag uses `placePieceAtPoint` → `setTranslate`), but the rule being enforced is **"no
+transform or `data-square` writes on piece elements outside `placement.ts`"**, and it
+should be enforced as a rule, not as a fact about today's callers: an
+`no-restricted-syntax`/`no-restricted-properties` lint entry scoped to `packages/core/src`,
+or failing that a dev-mode assertion. Tests cover today's paths; the lint covers tomorrow's.
 
 **Invariant to assert in tests:** a survivor element mapped at square S is visually at S.
 Today this holds — the animation cleanup restores the final transform through `setTransform`
@@ -242,6 +257,15 @@ Two things to be explicit about:
   that never repeats a position. That is gaming the measurement, and it is the exact failure
   the honesty guardrails in [`benchmarks-vs-chessground.md`](benchmarks-vs-chessground.md)
   exist to catch.
+- **A consumer-supplied `Pieces` map degrades the survivor fast path unless interned on
+  ingest.** PASS 1's cheap check is `occupant === piece`, which holds because `fenToPieces`
+  returns interned piece objects — the same 12 frozen `{color, role}` instances every parse.
+  A map built by the caller carries its own objects, so identity fails and every survivor
+  check for exactly the callers W5 serves falls to the two-string field comparison. Still
+  correct, just slower where W5 promised faster. Fix at the boundary: when `position` is a
+  map, re-key each entry through the same interning table `fenToPieces` uses (12 lookups of
+  a `color-role` key per update — trivial next to the parse being removed). Interning on
+  ingest also keeps a second invariant: state never holds caller-owned mutable objects.
 
 ---
 
@@ -283,7 +307,16 @@ One PR per workstream, in order **W2, W1, W4, W3**, with W5 and W6 independent. 
 because it is a one-line change with a test — it lands the measurement protocol cheaply
 before W1 uses it on something larger.
 
-Per PR:
+**W0 — precondition: make the win certifiable.** The published verdict is CI-based: a row
+only says "quadrum wins" when the ratio's 95% interval excludes 1.0. `update-total-script-ms`
+contributes **one value per repetition** — no per-iteration samples — so the nightly ratio
+interval was [0.86, 1.53] wide at 15 reps. The default is now 31 reps, which helps, but n=31
+is still coarse next to the scenarios that pool samples (mount certifies a 0.85× win from
+n=600; drag from n=19,050), and the projected endpoint here is ≈0.93× — a 7% edge that n=31
+may well leave inside the noise band. Before W1 lands, make the update scenario record
+per-update (or per-iteration-batch) samples so the metric pools like mount does. Otherwise
+the endpoint of this entire spec is a README row that still says "parity" about a win we
+paid for. This also fixes the local `--compare` check below, which inherits the same power.
 
 1. `pnpm typecheck` · `pnpm test` · `pnpm test:e2e` — the e2e suite must be **unchanged**.
    Both W1 and W3 alter when the board writes to the DOM, and e2e is the only check that
@@ -297,8 +330,9 @@ Per PR:
 
 **Baseline protocol.** The gate only fails on regression, so an improving PR passes against
 the stale baseline without touching it — no `bench-rebaseline` label needed, and none should
-be requested. Re-mint **once**, after the last of W1/W2/W4 lands, so the improvement is
-locked in against future regressions. Minting earlier means re-minting repeatedly, and every
+be requested. Re-mint **once**, after the last of W1/W2/W4 lands (and after W0, so the new
+baseline carries the pooled samples), so the improvement is locked in against future
+regressions. Minting earlier means re-minting repeatedly, and every
 mint is a chance to ratchet in a number nobody checked.
 
 One caveat that predates this work and still applies: the current committed baseline was

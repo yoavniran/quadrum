@@ -21,10 +21,10 @@
 	},
 	"devDependencies": {
 		"@lichess-org/chessground": "10.1.1",
-		"@playwright/test": "^1.62.1",
-		"@types/node": "^26.2.0",
+		"@playwright/test": "^1.63.0",
+		"@types/node": "^26.4.1",
 		"overweight": "^2.2.0",
 		"typescript": "^7.0.2",
-		"vite": "^8.2.1"
+		"vite": "^8.2.2"
 	}
 }

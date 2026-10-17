@@ -52,16 +52,16 @@ on npm and frozen at 9.2.1.
 <!-- bench:headline:start -->
 | Scenario | quadrum | chessground 10.2.0 | Ratio |
 | --- | --- | --- | --- |
-| Mount a full board | **2.73 ms** | 3.49 ms | **0.78× — quadrum wins** ✅ |
-| 100 position updates, animation off | 10.37 ms | 9.46 ms | 1.10× — parity |
-| 100 position updates, animation on | 1.74 ms | 1.22 ms | 1.43× — **chessground wins** |
-| Engine arrow re-draw, per tick | 27.50 ms | 27.92 ms | 0.99× — parity |
-| Drag latency, p95 | **19.50 ms** | 20.03 ms | **0.97× — quadrum wins** ✅ |
-| Resize storm, 50 resizes | **0.07 ms** | 0.96 ms | **quadrum ≈ 0.07 ms (below timer resolution) — does no measurable work here** ✅ |
+| Mount a full board | **1.33 ms** | 1.67 ms | **0.80× — quadrum wins** ✅ |
+| 100 position updates, animation off | 4.27 ms | 4.07 ms | 1.05× — parity |
+| 100 position updates, animation on | 1.20 ms | 0.90 ms | 1.34× — **chessground wins** |
+| Engine arrow re-draw, per tick | 9.60 ms | 9.84 ms | 0.98× — parity |
+| Drag latency, p95 | **17.87 ms** | 18.41 ms | **0.97× — quadrum wins** ✅ |
+| Resize storm, 50 resizes | **0.04 ms** | 0.56 ms | **quadrum ≈ 0.04 ms (below timer resolution) — does no measurable work here** ✅ |
 | Retention after teardown | 0 | 0 | 1.00× — parity |
 | Bundle size, min+brotli | **11.6 kB** | 12.0 kB | **0.97× — quadrum wins** ✅ |
 
-*Medians. Measured 2026-10-13 on linux/x64 (4 vCPU AMD EPYC 7763 64-Core Processor), headless Chromium 153.0.8010.12, CPU throttled 4×, 31 repetitions interleaved. quadrum `0.3.1` @ `2568d64` vs chessground `10.2.0`. "Parity" means the 95% confidence intervals overlap — a difference too small to claim.*
+*Medians. Measured 2026-10-17 on linux/x64 (4 vCPU AMD EPYC 9V45 96-Core Processor), headless Chromium 153.0.8010.12, CPU throttled 4×, 31 repetitions interleaved. quadrum `0.3.1` @ `51046d4` vs chessground `10.2.0`. "Parity" means the 95% confidence intervals overlap — a difference too small to claim.*
 
 - CPU throttle rate: 4
 - Headless has no real vsync; frame-derived metrics are advisory

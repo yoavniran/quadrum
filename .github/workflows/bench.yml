@@ -98,7 +98,7 @@ jobs:
   # failure here cannot silently cancel the schedule.
   should-run:
     if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       run: ${{ steps.decide.outputs.run }}
     steps:
@@ -140,7 +140,7 @@ jobs:
   # because the new baseline is what the gate compares against.
   guard-baseline:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -169,7 +169,7 @@ jobs:
   # to check against before that, and a check that fails for lack of data teaches
   # people to ignore it.
   drift:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -197,7 +197,7 @@ jobs:
     # A crash in should-run measures, which is the same fail-open rule the
     # decision itself follows.
     if: ${{ !cancelled() && needs.should-run.outputs.run != 'false' }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       # Read by mint-baseline, which runs even when the gate went red -- so the
       # baseline PR can state plainly that the run it was minted from failed
@@ -211,6 +211,8 @@ jobs:
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
+        with:
+          standalone: true
 
       - name: Set up Node
         uses: actions/setup-node@v7
@@ -360,7 +362,7 @@ jobs:
   publish:
     needs: bench
     if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       contents: write
       pull-requests: write
@@ -370,6 +372,8 @@ jobs:
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
+        with:
+          standalone: true
 
       - name: Set up Node
         uses: actions/setup-node@v7
@@ -435,7 +439,7 @@ jobs:
     # label rule still fails any baseline change that rides along with library
     # source. What this removes is a deadlock, not a review.
     if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.mint_baseline }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       contents: write
       pull-requests: write

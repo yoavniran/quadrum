@@ -14,6 +14,9 @@ on:
   push:
     branches:
       - main
+  # Manual runs: Actions tab -> CI -> "Run workflow" (any branch), or
+  # `gh workflow run ci.yml --ref <branch>`.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -24,7 +27,7 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -32,6 +35,8 @@ jobs:
       # pnpm before node, so setup-node's pnpm cache has a package manager to query.
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
+        with:
+          standalone: true
 
       - name: Set up Node
         uses: actions/setup-node@v7
@@ -61,13 +66,15 @@ jobs:
   # job rather than a step in `verify`: it needs a browser download, it is the
   # slowest thing here, and its failures should read as browser failures.
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
+        with:
+          standalone: true
 
       - name: Set up Node
         uses: actions/setup-node@v7
@@ -133,7 +140,7 @@ jobs:
   # line. A `chore:` where a `fix:` belonged ships nothing.
   commits:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout
         # Full history: commitlint walks the range base..HEAD, which a shallow
@@ -144,6 +151,8 @@ jobs:
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
+        with:
+          standalone: true
 
       - name: Set up Node
         uses: actions/setup-node@v7

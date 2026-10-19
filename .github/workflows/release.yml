@@ -57,7 +57,7 @@ jobs:
   # Opens or refreshes the release PR. On the push that *merges* that PR, it
   # instead cuts the tags and GitHub releases and reports which packages moved.
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       # Push the release branch and create tags and GitHub releases.
       contents: write
@@ -83,7 +83,7 @@ jobs:
   publish:
     needs: prepare
     if: needs.prepare.outputs.releases_created == 'true'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       contents: read
       # Mint the OIDC token npm trades for publish rights. Without this,
@@ -95,6 +95,8 @@ jobs:
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
+        with:
+          standalone: true
 
       - name: Set up Node
         uses: actions/setup-node@v7

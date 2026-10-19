@@ -209,10 +209,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # The self-hosted runner has an old system node on PATH that pnpm's
+      # self-installer would pick up. Put a current node first (no cache yet: that
+      # needs pnpm, which is installed next).
+      - name: Set up Node (bootstrap for pnpm)
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
-        with:
-          standalone: true
 
       - name: Set up Node
         uses: actions/setup-node@v7
@@ -370,10 +376,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # The self-hosted runner has an old system node on PATH that pnpm's
+      # self-installer would pick up. Put a current node first (no cache yet: that
+      # needs pnpm, which is installed next).
+      - name: Set up Node (bootstrap for pnpm)
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
-        with:
-          standalone: true
 
       - name: Set up Node
         uses: actions/setup-node@v7

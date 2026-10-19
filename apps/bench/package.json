@@ -20,11 +20,11 @@
 		"quadrum": "workspace:*"
 	},
 	"devDependencies": {
-		"@lichess-org/chessground": "10.2.0",
-		"@playwright/test": "^1.63.0",
-		"@types/node": "^26.6.2",
+		"@lichess-org/chessground": "10.4.2",
+		"@playwright/test": "^1.64.0",
+		"@types/node": "^26.6.5",
 		"overweight": "^2.2.0",
 		"typescript": "^7.0.2",
-		"vite": "^8.3.0"
+		"vite": "^8.3.4"
 	}
 }

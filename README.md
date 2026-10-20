@@ -52,16 +52,16 @@ on npm and frozen at 9.2.1.
 <!-- bench:headline:start -->
 | Scenario | quadrum | chessground 10.2.0 | Ratio |
 | --- | --- | --- | --- |
-| Mount a full board | **2.73 ms** | 3.49 ms | **0.78× — quadrum wins** ✅ |
-| 100 position updates, animation off | 10.37 ms | 9.46 ms | 1.10× — parity |
-| 100 position updates, animation on | 1.74 ms | 1.22 ms | 1.43× — **chessground wins** |
-| Engine arrow re-draw, per tick | 27.50 ms | 27.92 ms | 0.99× — parity |
-| Drag latency, p95 | **19.50 ms** | 20.03 ms | **0.97× — quadrum wins** ✅ |
-| Resize storm, 50 resizes | **0.07 ms** | 0.96 ms | **quadrum ≈ 0.07 ms (below timer resolution) — does no measurable work here** ✅ |
+| Mount a full board | **2.24 ms** | 2.70 ms | **0.83× — quadrum wins** ✅ |
+| 100 position updates, animation off | 4.70 ms | 4.21 ms | 1.12× — parity |
+| 100 position updates, animation on | 1.90 ms | 1.33 ms | 1.43× — **chessground wins** |
+| Engine arrow re-draw, per tick | 10.51 ms | 10.44 ms | 1.01× — parity |
+| Drag latency, p95 | **18.73 ms** | 19.38 ms | **0.97× — quadrum wins** ✅ |
+| Resize storm, 50 resizes | **0.04 ms** | 0.68 ms | **quadrum ≈ 0.04 ms (below timer resolution) — does no measurable work here** ✅ |
 | Retention after teardown | 0 | 0 | 1.00× — parity |
 | Bundle size, min+brotli | **11.6 kB** | 12.0 kB | **0.97× — quadrum wins** ✅ |
 
-*Medians. Measured 2026-10-13 on linux/x64 (4 vCPU AMD EPYC 7763 64-Core Processor), headless Chromium 153.0.8010.12, CPU throttled 4×, 31 repetitions interleaved. quadrum `0.3.1` @ `2568d64` vs chessground `10.2.0`. "Parity" means the 95% confidence intervals overlap — a difference too small to claim.*
+*Medians. Measured 2026-10-19 on linux/x64 (4 vCPU AMD EPYC 9V45 96-Core Processor), headless Chromium 153.0.8010.12, CPU throttled 4×, 31 repetitions interleaved. quadrum `0.3.1` @ `51046d4` vs chessground `10.2.0`. "Parity" means the 95% confidence intervals overlap — a difference too small to claim.*
 
 - CPU throttle rate: 4
 - Headless has no real vsync; frame-derived metrics are advisory

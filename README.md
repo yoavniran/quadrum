@@ -50,18 +50,18 @@ package — lichess moved publishing there at v10, and the unscoped `chessground
 on npm and frozen at 9.2.1.
 
 <!-- bench:headline:start -->
-| Scenario | quadrum | chessground 10.2.0 | Ratio |
+| Scenario | quadrum | chessground 10.4.2 | Ratio |
 | --- | --- | --- | --- |
-| Mount a full board | **2.24 ms** | 2.70 ms | **0.83× — quadrum wins** ✅ |
-| 100 position updates, animation off | 4.70 ms | 4.21 ms | 1.12× — parity |
-| 100 position updates, animation on | 1.90 ms | 1.33 ms | 1.43× — **chessground wins** |
-| Engine arrow re-draw, per tick | 10.51 ms | 10.44 ms | 1.01× — parity |
-| Drag latency, p95 | **18.73 ms** | 19.38 ms | **0.97× — quadrum wins** ✅ |
-| Resize storm, 50 resizes | **0.04 ms** | 0.68 ms | **quadrum ≈ 0.04 ms (below timer resolution) — does no measurable work here** ✅ |
+| Mount a full board | **2.83 ms** | 3.66 ms | **0.77× — quadrum wins** ✅ |
+| 100 position updates, animation off | 8.21 ms | 7.71 ms | 1.06× — parity |
+| 100 position updates, animation on | 2.32 ms | 1.75 ms | 1.33× — **chessground wins** |
+| Engine arrow re-draw, per tick | 21.55 ms | 19.17 ms | 1.12× — **chessground wins** |
+| Drag latency, p95 | **18.97 ms** | 19.56 ms | **0.97× — quadrum wins** ✅ |
+| Resize storm, 50 resizes | **0.25 ms** | 1.08 ms | **0.23× — quadrum wins** ✅ |
 | Retention after teardown | 0 | 0 | 1.00× — parity |
 | Bundle size, min+brotli | **11.6 kB** | 12.0 kB | **0.97× — quadrum wins** ✅ |
 
-*Medians. Measured 2026-10-19 on linux/x64 (4 vCPU AMD EPYC 9V45 96-Core Processor), headless Chromium 153.0.8010.12, CPU throttled 4×, 31 repetitions interleaved. quadrum `0.3.1` @ `51046d4` vs chessground `10.2.0`. "Parity" means the 95% confidence intervals overlap — a difference too small to claim.*
+*Medians. Measured 2026-10-24 on linux/x64 (6 vCPU AMD Ryzen 5 4500U with Radeon Graphics), headless Chromium 156.0.8078.4, CPU throttled 4×, 31 repetitions interleaved. quadrum `0.3.1` @ `7cd3326` vs chessground `10.4.2`. "Parity" means the 95% confidence intervals overlap — a difference too small to claim.*
 
 - CPU throttle rate: 4
 - Headless has no real vsync; frame-derived metrics are advisory
